@@ -1,0 +1,94 @@
+---
+title: classmethod and staticmethod
+sidebar_position: 6
+---
+
+`@classmethod` receives the class (`cls`) and is the idiomatic way to write alternate constructors; `@staticmethod` receives nothing and is just a helper namespaced in the class. In LLD rounds use classmethods for `from_dict`/`from_string` factories and staticmethods for pure validation/utility logic.
+
+## Syntax
+
+```python
+class Vehicle:
+    def __init__(self, plate: str, kind: str) -> None:
+        self.plate = plate
+        self.kind = kind
+
+    @classmethod
+    def from_string(cls, s: str) -> Vehicle:   # alternate constructor
+        plate, kind = s.split(":")
+        return cls(plate, kind)
+
+    @staticmethod
+    def is_valid_plate(plate: str) -> bool:    # helper, no self/cls
+        return plate.isalnum() and len(plate) <= 10
+
+v = Vehicle.from_string("KA01:car")
+print(v.plate, v.kind)                         # -> KA01 car
+print(Vehicle.is_valid_plate("KA01"))          # -> True
+```
+
+### from_dict factory
+
+```python
+class Account:
+    def __init__(self, owner: str, balance: float = 0) -> None:
+        self.owner = owner
+        self.balance = balance
+
+    @classmethod
+    def from_dict(cls, data: dict[str, object]) -> Account:
+        return cls(owner=data["owner"], balance=data.get("balance", 0))
+
+acc = Account.from_dict({"owner": "ann", "balance": 10})
+print(acc.owner, acc.balance)                  # -> ann 10
+```
+
+### cls makes factories subclass-friendly
+
+```python
+from typing import Self
+
+class Vehicle:
+    def __init__(self, plate: str) -> None:
+        self.plate = plate
+
+    @classmethod
+    def create(cls, plate: str) -> Self:       # Self: 3.11+
+        return cls(plate)                      # builds the subclass, not Vehicle
+
+class Truck(Vehicle): ...
+
+print(type(Truck.create("TR-1")).__name__)     # -> Truck
+```
+
+### classmethod touching class state
+
+```python
+class Order:
+    _count = 0
+
+    def __init__(self) -> None:
+        Order._count += 1
+
+    @classmethod
+    def count(cls) -> int:
+        return cls._count
+
+Order(); Order()
+print(Order.count())                           # -> 2
+```
+
+### The difference
+
+```python
+# instance method   def f(self, ...)   gets the instance; reads/writes object state
+# @classmethod      def f(cls, ...)    gets the class; factories, class-level state
+# @staticmethod     def f(...)         gets nothing; pure helper living in the class namespace
+# All three can be called on an instance or the class (static/class).
+```
+
+## Docs
+
+- [classmethod](https://docs.python.org/3.14/library/functions.html#classmethod)
+- [staticmethod](https://docs.python.org/3.14/library/functions.html#staticmethod)
+- [typing.Self](https://docs.python.org/3.14/library/typing.html#typing.Self)

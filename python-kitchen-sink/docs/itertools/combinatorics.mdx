@@ -1,0 +1,110 @@
+---
+title: Combinatorics (permutations, combinations, product)
+sidebar_position: 2
+---
+
+`permutations`, `combinations`, `combinations_with_replacement` and `product` generate tuples lazily in lexicographic order of input positions. Use them for brute force on small inputs, enumerating subsets, or grid directions; switch to backtracking when you need pruning.
+
+## Syntax
+
+```python
+from itertools import combinations, permutations, product
+
+list(permutations([1, 2, 3], 2))  # -> [(1, 2), (1, 3), (2, 1), (2, 3), (3, 1), (3, 2)]
+list(combinations([1, 2, 3], 2))  # -> [(1, 2), (1, 3), (2, 3)]
+list(product("ab", repeat=2))     # -> [('a', 'a'), ('a', 'b'), ('b', 'a'), ('b', 'b')]
+```
+
+### permutations(iterable, r=None)
+
+```python
+from itertools import permutations
+
+list(permutations("abc"))         # all n! orderings, r defaults to len
+# P(n, r) = n! / (n - r)! results
+["".join(p) for p in permutations("abc")]  # -> ['abc', 'acb', 'bac', 'bca', 'cab', 'cba']
+# duplicates in input -> duplicate outputs; dedupe with set(...)
+```
+
+### combinations(iterable, r)
+
+```python
+from itertools import combinations
+
+nums = [1, 2, 3, 4]
+list(combinations(nums, 3))   # C(n, r) results, no repeats, order kept
+# all subsets (power set), O(2^n * n)
+subsets = [c for r in range(len(nums) + 1) for c in combinations(nums, r)]
+len(subsets)  # -> 16
+```
+
+### combinations_with_replacement(iterable, r)
+
+```python
+from itertools import combinations_with_replacement
+
+list(combinations_with_replacement([1, 2, 3], 2))
+# -> [(1, 1), (1, 2), (1, 3), (2, 2), (2, 3), (3, 3)]
+# C(n + r - 1, r) results
+```
+
+### product: cartesian product and repeat=
+
+```python
+from itertools import product
+
+list(product([1, 2], "xy"))     # -> [(1, 'x'), (1, 'y'), (2, 'x'), (2, 'y')]
+list(product([0, 1], repeat=3)) # all 2^3 bit patterns
+# replaces nested loops
+for i, j in product(range(3), range(4)):
+    ...
+```
+
+### Grid directions
+
+```python
+from itertools import product
+
+DIRS4 = [(0, 1), (1, 0), (0, -1), (-1, 0)]
+DIRS8 = [(dr, dc) for dr, dc in product((-1, 0, 1), repeat=2) if (dr, dc) != (0, 0)]
+len(DIRS8)  # -> 8
+```
+
+### Output sizes
+
+```python
+import math
+
+n, r = 10, 3
+math.perm(n, r)          # permutations(range(n), r)              -> 720
+math.comb(n, r)          # combinations(range(n), r)              -> 120
+math.comb(n + r - 1, r)  # combinations_with_replacement(..., r)  -> 220
+n ** r                   # product(range(n), repeat=r)            -> 1000
+# n! blows up fast: 10! = 3.6M, 12! = 479M -> too slow past n ~ 10
+```
+
+### When to use backtracking instead
+
+```python
+# Use backtracking when you need pruning (sum exceeds target, invalid prefix),
+# constraints between elements, or the full space is too large.
+def backtrack(start: int, path: list[int], total: int) -> None:
+    if total == target:
+        res.append(path[:])
+        return
+    for i in range(start, len(cands)):
+        if total + cands[i] > target:  # prune: cands sorted
+            break
+        path.append(cands[i])
+        backtrack(i, path, total + cands[i])
+        path.pop()
+```
+
+## Docs
+
+- [itertools.permutations](https://docs.python.org/3.14/library/itertools.html#itertools.permutations)
+- [itertools.combinations](https://docs.python.org/3.14/library/itertools.html#itertools.combinations)
+- [itertools.combinations_with_replacement](https://docs.python.org/3.14/library/itertools.html#itertools.combinations_with_replacement)
+- [itertools.product](https://docs.python.org/3.14/library/itertools.html#itertools.product)
+- [math.comb](https://docs.python.org/3.14/library/math.html#math.comb)
+- [math.perm](https://docs.python.org/3.14/library/math.html#math.perm)

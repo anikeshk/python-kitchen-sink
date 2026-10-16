@@ -1,0 +1,137 @@
+---
+title: Strategy
+sidebar_position: 4
+---
+
+Defines a family of interchangeable algorithms behind one interface and lets the client pick one at runtime. Probably the most common pattern in LLD rounds: pricing/fee rules, payment methods, spot allocation, routing, eviction policies. In Python, a strategy can be an ABC subclass, anything matching a `Protocol`, or just a function.
+
+## Syntax
+
+```python
+from abc import ABC, abstractmethod
+
+class PricingStrategy(ABC):
+    @abstractmethod
+    def price(self, hours: int) -> float: ...
+
+class HourlyPricing(PricingStrategy):
+    def __init__(self, rate: float) -> None:
+        self.rate = rate
+    def price(self, hours: int) -> float:
+        return hours * self.rate
+
+class FlatPricing(PricingStrategy):
+    def price(self, hours: int) -> float:
+        return 100.0
+
+class ParkingLot:
+    def __init__(self, pricing: PricingStrategy) -> None:
+        self.pricing = pricing                  # injected; swappable at runtime
+
+    def fee(self, hours: int) -> float:
+        return self.pricing.price(hours)
+
+lot = ParkingLot(HourlyPricing(20))
+lot.fee(3)                                      # -> 60
+lot.pricing = FlatPricing()
+lot.fee(3)                                      # -> 100.0
+```
+
+### Protocol-based (structural, no inheritance)
+
+```python
+from typing import Protocol
+
+class PaymentStrategy(Protocol):
+    def pay(self, amount: float) -> str: ...
+
+class CardPayment:                              # doesn't subclass anything
+    def __init__(self, last4: str) -> None:
+        self.last4 = last4
+    def pay(self, amount: float) -> str:
+        return f"charged {amount} to card *{self.last4}"
+
+class UpiPayment:
+    def __init__(self, vpa: str) -> None:
+        self.vpa = vpa
+    def pay(self, amount: float) -> str:
+        return f"collected {amount} via {self.vpa}"
+
+def checkout(amount: float, method: PaymentStrategy) -> str:
+    return method.pay(amount)                   # type checker verifies the shape
+
+checkout(250, UpiPayment("amy@bank"))
+```
+
+### Plain functions (often the most Pythonic)
+
+```python
+from typing import Callable
+
+type Router = Callable[[list[str]], str]        # 3.12+ type alias syntax
+
+def round_robin_factory() -> Router:
+    i = 0
+    def pick(servers: list[str]) -> str:
+        nonlocal i
+        s = servers[i % len(servers)]
+        i += 1
+        return s
+    return pick
+
+def first_available(servers: list[str]) -> str:
+    return servers[0]
+
+class LoadBalancer:
+    def __init__(self, servers: list[str], strategy: Router) -> None:
+        self.servers, self.strategy = servers, strategy
+    def route(self) -> str:
+        return self.strategy(self.servers)
+
+lb = LoadBalancer(["s1", "s2"], round_robin_factory())
+[lb.route() for _ in range(3)]                  # -> ['s1', 's2', 's1']
+```
+
+### Strategy lookup by key
+
+```python
+STRATEGIES = {
+    "weekday": lambda hours: hours * 20,
+    "weekend": lambda hours: hours * 30,
+    "vip": lambda hours: 0,
+}
+
+def fee(kind: str, hours: int) -> int:
+    return STRATEGIES[kind](hours)              # dict replaces if/elif
+
+fee("weekend", 2)                               # -> 60
+```
+
+### Composing strategies (discount chain)
+
+```python
+from functools import reduce
+from typing import Callable
+
+Discount = Callable[[float], float]
+
+def percent_off(p: float) -> Discount:
+    return lambda amt: amt * (1 - p / 100)
+
+def flat_off(x: float) -> Discount:
+    return lambda amt: max(0.0, amt - x)
+
+def apply_all(amount: float, discounts: list[Discount]) -> float:
+    return reduce(lambda acc, d: d(acc), discounts, amount)
+
+apply_all(200, [percent_off(10), flat_off(20)])  # -> 160.0
+```
+
+## Docs
+
+- [abc.ABC](https://docs.python.org/3.14/library/abc.html#abc.ABC)
+- [abc.abstractmethod](https://docs.python.org/3.14/library/abc.html#abc.abstractmethod)
+- [typing.Protocol](https://docs.python.org/3.14/library/typing.html#typing.Protocol)
+- [collections.abc.Callable (annotating callables)](https://docs.python.org/3.14/library/typing.html#annotating-callable-objects)
+- [The type statement](https://docs.python.org/3.14/reference/simple_stmts.html#the-type-statement)
+- [functools.reduce](https://docs.python.org/3.14/library/functools.html#functools.reduce)

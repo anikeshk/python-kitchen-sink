@@ -1,0 +1,128 @@
+---
+title: Functions
+sidebar_position: 9
+---
+
+Define with `def`, return with `return` (implicitly `None`). Interviews lean on nested helpers like `def dfs(...)` inside a method, closures that update outer state with `nonlocal`, and lambdas as sort keys.
+
+## Syntax
+
+```python
+def add(a: int, b: int = 0) -> int:
+    return a + b
+
+add(2, 3)      # -> 5
+add(2)         # -> 2
+add(b=1, a=2)  # keyword arguments
+```
+
+### `*args` and `**kwargs`
+
+```python
+def log(*args, **kwargs):
+    print(args)     # tuple of positional args
+    print(kwargs)   # dict of keyword args
+
+log(1, 2, level="info")  # (1, 2) / {'level': 'info'}
+```
+
+### Keyword-only and positional-only
+
+```python
+def f(a, b, /, c, *, d):
+    ...
+# a, b: positional-only (before /)
+# c: either
+# d: keyword-only (after *)
+f(1, 2, 3, d=4)
+f(1, 2, c=3, d=4)
+
+def search(nums, target, *, reverse=False): ...
+```
+
+### Lambda
+
+```python
+square = lambda x: x * x
+pairs = [(1, "b"), (2, "a")]
+pairs.sort(key=lambda p: p[1])          # sort by second item
+pairs.sort(key=lambda p: (-p[0], p[1])) # desc by first, asc by second
+```
+
+### Closures: nonlocal and global
+
+```python
+def counter():
+    count = 0
+    def inc():
+        nonlocal count     # rebind the enclosing variable
+        count += 1
+        return count
+    return inc
+
+c = counter()
+c(); c()                   # -> 2
+
+total = 0
+def bump():
+    global total           # rebind the module-level variable
+    total += 1
+# Mutating (list.append, dict[k] = v) needs neither keyword; only rebinding does
+```
+
+### Nested helper (LeetCode style)
+
+```python
+class TreeNode:
+    def __init__(self, val=0, left=None, right=None):
+        self.val, self.left, self.right = val, left, right
+
+class Solution:
+    def maxDepth(self, root: TreeNode | None) -> int:
+        best = 0
+
+        def dfs(node: TreeNode | None, depth: int) -> None:
+            nonlocal best
+            if not node:
+                return
+            best = max(best, depth)
+            dfs(node.left, depth + 1)
+            dfs(node.right, depth + 1)
+
+        dfs(root, 1)
+        return best
+
+Solution().maxDepth(TreeNode(1, TreeNode(2)))  # -> 2
+```
+
+### Return multiple values
+
+```python
+def min_max(nums: list[int]) -> tuple[int, int]:
+    return min(nums), max(nums)    # returns a tuple
+
+lo, hi = min_max([3, 1, 4])        # -> 1, 4
+```
+
+### Memoization
+
+```python
+from functools import cache
+
+@cache
+def fib(n: int) -> int:
+    return n if n < 2 else fib(n - 1) + fib(n - 2)
+
+fib(50)  # -> 12586269025, O(n) with cache
+```
+
+## Docs
+
+- [Defining functions](https://docs.python.org/3.14/tutorial/controlflow.html#defining-functions)
+- [More on defining functions](https://docs.python.org/3.14/tutorial/controlflow.html#more-on-defining-functions)
+- [Special parameters (/ and *)](https://docs.python.org/3.14/tutorial/controlflow.html#special-parameters)
+- [Lambda expressions](https://docs.python.org/3.14/tutorial/controlflow.html#lambda-expressions)
+- [The nonlocal statement](https://docs.python.org/3.14/reference/simple_stmts.html#the-nonlocal-statement)
+- [The global statement](https://docs.python.org/3.14/reference/simple_stmts.html#the-global-statement)
+- [Function definitions](https://docs.python.org/3.14/reference/compound_stmts.html#function-definitions)
+- [functools.cache](https://docs.python.org/3.14/library/functools.html#functools.cache)

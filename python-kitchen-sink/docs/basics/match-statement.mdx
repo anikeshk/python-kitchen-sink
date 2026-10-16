@@ -1,0 +1,110 @@
+---
+title: match statement
+sidebar_position: 4
+---
+
+Structural pattern matching (3.10+): matches a value against patterns and destructures it in one step. Handy in LLD for command/event dispatch and parsing tokens; in DSA it mostly replaces `if/elif` chains on operators or tuple shapes.
+
+## Syntax
+
+```python
+match command:
+    case "start":
+        ...
+    case "stop":
+        ...
+    case _:            # wildcard, matches anything
+        ...
+```
+
+### Literals and OR patterns
+
+```python
+match op:
+    case "+" | "-":
+        ...
+    case "*" | "/":
+        ...
+    case 0 | None:
+        ...
+```
+
+### Capture and guards
+
+```python
+match x:
+    case 0:
+        print("zero")
+    case n if n < 0:           # guard
+        print("negative", n)
+    case n:                    # capture: binds anything to n
+        print("positive", n)
+```
+
+### Sequence patterns
+
+```python
+match point:
+    case (0, 0):
+        print("origin")
+    case (x, 0):
+        print("on x-axis at", x)
+    case [x, y]:               # list or tuple, length 2
+        print(x, y)
+    case [first, *rest]:       # star capture
+        print(first, rest)
+    case []:
+        print("empty")
+```
+
+### Mapping patterns
+
+```python
+match event:
+    case {"type": "click", "x": x, "y": y}:   # extra keys are allowed
+        print(x, y)
+    case {"type": "key", **rest}:
+        print(rest)
+```
+
+### Class patterns
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class Point:
+    x: int
+    y: int
+
+def where(p):
+    match p:
+        case Point(x=0, y=0):
+            return "origin"
+        case Point(x=0, y=y):
+            return f"y-axis {y}"
+        case Point(x, y):          # positional via __match_args__ (dataclass sets it)
+            return f"{x},{y}"
+        case int() | float():      # type check
+            return "number"
+        case _:
+            return "unknown"
+
+where(Point(0, 5))  # -> 'y-axis 5'
+```
+
+### Capture with `as`
+
+```python
+match token:
+    case ("+" | "-") as sign:
+        print(sign)
+```
+
+## Docs
+
+- [The match statement](https://docs.python.org/3.14/reference/compound_stmts.html#the-match-statement)
+- [Tutorial: match statements](https://docs.python.org/3.14/tutorial/controlflow.html#match-statements)
+- [Patterns](https://docs.python.org/3.14/reference/compound_stmts.html#patterns)
+- [Guards](https://docs.python.org/3.14/reference/compound_stmts.html#guards)
+- [Class patterns](https://docs.python.org/3.14/reference/compound_stmts.html#class-patterns)

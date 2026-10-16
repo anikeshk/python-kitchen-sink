@@ -1,0 +1,9 @@
+{
+  "label": "Basics",
+  "position": 1,
+  "link": {
+    "type": "generated-index",
+    "slug": "/basics",
+    "description": "Loops, conditionals, functions, exceptions and core syntax."
+  }
+}

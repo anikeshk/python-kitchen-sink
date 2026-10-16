@@ -1,0 +1,145 @@
+---
+title: Observer
+sidebar_position: 5
+---
+
+A subject keeps a list of observers and notifies all of them when its state changes, so publishers don't know who's listening. Shows up in LLD rounds for notification services, stock/price alerts, "notify me when a spot frees up", auction bids and event buses. In Python, observers can be objects with an `update` method or plain callbacks.
+
+## Syntax
+
+```python
+from typing import Protocol
+
+class Observer(Protocol):
+    def update(self, event: str, data: dict) -> None: ...
+
+class Subject:
+    def __init__(self) -> None:
+        self._observers: list[Observer] = []
+
+    def subscribe(self, obs: Observer) -> None:
+        if obs not in self._observers:
+            self._observers.append(obs)
+
+    def unsubscribe(self, obs: Observer) -> None:
+        self._observers.remove(obs)
+
+    def notify(self, event: str, data: dict) -> None:
+        for obs in list(self._observers):       # copy: observers may unsubscribe mid-loop
+            obs.update(event, data)
+
+class ParkingLot(Subject):
+    def free_spot(self, spot: str) -> None:
+        self.notify("spot_freed", {"spot": spot})
+
+class DisplayBoard:
+    def update(self, event: str, data: dict) -> None:
+        print(f"[board] {event}: {data['spot']}")
+
+class WaitlistNotifier:
+    def update(self, event: str, data: dict) -> None:
+        print(f"[sms] spot {data['spot']} is free")
+
+lot = ParkingLot()
+lot.subscribe(DisplayBoard())
+lot.subscribe(WaitlistNotifier())
+lot.free_spot("A1")
+```
+
+### Callback-based (functions as observers)
+
+```python
+from collections import defaultdict
+from typing import Callable
+
+type Handler = Callable[[dict], None]                   # 3.12+
+
+class EventBus:
+    def __init__(self) -> None:
+        self._handlers: defaultdict[str, list[Handler]] = defaultdict(list)
+
+    def on(self, event: str, handler: Handler) -> Callable[[], None]:
+        self._handlers[event].append(handler)
+        return lambda: self._handlers[event].remove(handler)   # unsubscribe fn
+
+    def emit(self, event: str, payload: dict) -> None:
+        for h in list(self._handlers[event]):
+            h(payload)
+
+bus = EventBus()
+unsub = bus.on("order_placed", lambda p: print("email:", p["id"]))
+bus.on("order_placed", lambda p: print("inventory:", p["id"]))
+bus.emit("order_placed", {"id": "o1"})
+unsub()
+bus.emit("order_placed", {"id": "o2"})                  # only inventory fires
+```
+
+### Price alert with per-observer filter
+
+```python
+from dataclasses import dataclass, field
+
+@dataclass
+class PriceAlert:
+    user: str
+    threshold: float
+    def update(self, symbol: str, price: float) -> None:
+        if price <= self.threshold:
+            print(f"{self.user}: {symbol} hit {price}")
+
+@dataclass
+class Stock:
+    symbol: str
+    _price: float = 0.0
+    _watchers: list[PriceAlert] = field(default_factory=list)
+
+    @property
+    def price(self) -> float:
+        return self._price
+
+    @price.setter
+    def price(self, value: float) -> None:      # notify on state change
+        self._price = value
+        for w in self._watchers:
+            w.update(self.symbol, value)
+
+s = Stock("ACME")
+s._watchers.append(PriceAlert("amy", 90))
+s.price = 95                                    # nothing
+s.price = 88                                    # amy: ACME hit 88
+```
+
+### weakref: don't keep dead observers alive
+
+```python
+import weakref
+
+class Subject:
+    def __init__(self) -> None:
+        self._observers: weakref.WeakSet = weakref.WeakSet()   # auto-drops GC'd observers
+
+    def subscribe(self, obs) -> None:
+        self._observers.add(obs)
+
+    def notify(self, msg: str) -> None:
+        for obs in list(self._observers):
+            obs.update(msg)
+
+class Screen:
+    def update(self, msg: str) -> None: print(msg)
+
+subj, screen = Subject(), Screen()
+subj.subscribe(screen)
+del screen                                      # no explicit unsubscribe needed
+subj.notify("hi")                               # nothing printed (CPython frees immediately)
+# For bound-method callbacks use weakref.WeakMethod.
+```
+
+## Docs
+
+- [typing.Protocol](https://docs.python.org/3.14/library/typing.html#typing.Protocol)
+- [collections.defaultdict](https://docs.python.org/3.14/library/collections.html#collections.defaultdict)
+- [property](https://docs.python.org/3.14/library/functions.html#property)
+- [weakref.WeakSet](https://docs.python.org/3.14/library/weakref.html#weakref.WeakSet)
+- [weakref.WeakMethod](https://docs.python.org/3.14/library/weakref.html#weakref.WeakMethod)
+- [The type statement](https://docs.python.org/3.14/reference/simple_stmts.html#the-type-statement)

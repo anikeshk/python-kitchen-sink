@@ -1,0 +1,140 @@
+---
+title: Decorator pattern
+sidebar_position: 7
+---
+
+Wraps an object in another object with the same interface to add behaviour (add-ons, logging, caching) at runtime, and wrappers can be stacked. Shows up in LLD rounds as coffee/pizza add-on pricing, notification channels layered on each other, or logging/caching around a service. Not the same as Python's `@decorator` syntax, which wraps functions at definition time.
+
+## Syntax
+
+```python
+from abc import ABC, abstractmethod
+
+class Beverage(ABC):
+    @abstractmethod
+    def cost(self) -> float: ...
+    @abstractmethod
+    def description(self) -> str: ...
+
+class Espresso(Beverage):
+    def cost(self) -> float: return 2.0
+    def description(self) -> str: return "Espresso"
+
+class AddOn(Beverage):                      # decorator IS-A Beverage and HAS-A Beverage
+    def __init__(self, inner: Beverage) -> None:
+        self.inner = inner
+
+class Milk(AddOn):
+    def cost(self) -> float: return self.inner.cost() + 0.5
+    def description(self) -> str: return self.inner.description() + ", milk"
+
+class Caramel(AddOn):
+    def cost(self) -> float: return self.inner.cost() + 0.7
+    def description(self) -> str: return self.inner.description() + ", caramel"
+
+drink = Caramel(Milk(Milk(Espresso())))     # stack at runtime, any order/count
+drink.description()                         # -> 'Espresso, milk, milk, caramel'
+drink.cost()                                # -> 3.7
+```
+
+### Logging / caching wrapper around a service
+
+```python
+from typing import Protocol
+
+class Repo(Protocol):
+    def get(self, key: str) -> str: ...
+
+class DbRepo:
+    def get(self, key: str) -> str:
+        return f"value-for-{key}"
+
+class LoggingRepo:
+    def __init__(self, inner: Repo) -> None:
+        self.inner = inner
+    def get(self, key: str) -> str:
+        print(f"get({key})")
+        return self.inner.get(key)
+
+class CachingRepo:
+    def __init__(self, inner: Repo) -> None:
+        self.inner, self.cache = inner, {}
+    def get(self, key: str) -> str:
+        if key not in self.cache:
+            self.cache[key] = self.inner.get(key)
+        return self.cache[key]
+
+repo: Repo = CachingRepo(LoggingRepo(DbRepo()))
+repo.get("a"); repo.get("a")                # logs only once: cache hit the 2nd time
+```
+
+### Notifier stack
+
+```python
+class Notifier:
+    def send(self, msg: str) -> list[str]:
+        return [f"email: {msg}"]
+
+class NotifierDecorator(Notifier):
+    def __init__(self, inner: Notifier) -> None:
+        self.inner = inner
+
+class Sms(NotifierDecorator):
+    def send(self, msg: str) -> list[str]:
+        return self.inner.send(msg) + [f"sms: {msg}"]
+
+class Slack(NotifierDecorator):
+    def send(self, msg: str) -> list[str]:
+        return self.inner.send(msg) + [f"slack: {msg}"]
+
+Slack(Sms(Notifier())).send("server down")
+# -> ['email: server down', 'sms: server down', 'slack: server down']
+```
+
+### Forward everything else with `__getattr__`
+
+```python
+class Timed:
+    def __init__(self, inner) -> None:
+        self._inner = inner
+
+    def __getattr__(self, name):            # only called for missing attributes
+        return getattr(self._inner, name)   # transparent pass-through
+
+class Account:
+    owner = "amy"
+    def balance(self) -> int: return 100
+
+t = Timed(Account())
+t.owner, t.balance()                        # -> ('amy', 100)
+```
+
+### vs Python's @decorator syntax
+
+```python
+import functools
+
+# Pattern decorator: wraps an OBJECT at runtime, same interface, stackable per instance.
+# @decorator syntax: wraps a FUNCTION/CLASS once at definition time.
+def logged(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        print("calling", func.__name__)
+        return func(*args, **kwargs)
+    return wrapper
+
+@logged
+def checkout(total: float) -> float:
+    return total
+
+checkout(10.0)
+# Same idea (add behaviour by wrapping), different target and binding time.
+```
+
+## Docs
+
+- [abc.ABC](https://docs.python.org/3.14/library/abc.html#abc.ABC)
+- [typing.Protocol](https://docs.python.org/3.14/library/typing.html#typing.Protocol)
+- [object.`__getattr__`](https://docs.python.org/3.14/reference/datamodel.html#object.__getattr__)
+- [Glossary: decorator (the @ syntax)](https://docs.python.org/3.14/glossary.html#term-decorator)
+- [functools.wraps](https://docs.python.org/3.14/library/functools.html#functools.wraps)

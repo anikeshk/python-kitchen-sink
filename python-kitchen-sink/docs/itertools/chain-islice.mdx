@@ -1,0 +1,78 @@
+---
+title: chain and islice
+sidebar_position: 5
+---
+
+`chain` iterates several iterables back to back without building a combined list; `chain.from_iterable` flattens one level of nesting. `islice` slices any iterator lazily, e.g. take the first n items from a generator.
+
+## Syntax
+
+```python
+from itertools import chain, islice
+
+list(chain([1, 2], [3], (4, 5)))           # -> [1, 2, 3, 4, 5]
+list(chain.from_iterable([[1, 2], [3, 4]]))  # -> [1, 2, 3, 4]
+list(islice(range(100), 3))                # -> [0, 1, 2]
+```
+
+### Iterate several sequences without copying
+
+```python
+from itertools import chain
+
+a, b = [1, 2], [3, 4]
+for x in chain(a, b):   # O(1) extra space vs a + b which is O(n)
+    ...
+```
+
+### Flatten one level
+
+```python
+from itertools import chain
+
+grid = [[1, 2], [3, 4], [5]]
+list(chain.from_iterable(grid))     # -> [1, 2, 3, 4, 5]
+[x for row in grid for x in row]    # equivalent comprehension
+max(chain.from_iterable(grid))      # -> 5  no intermediate list
+```
+
+### islice(iterable, stop) / (start, stop[, step])
+
+```python
+from itertools import islice
+
+it = iter("abcdefg")
+list(islice(it, 2))         # -> ['a', 'b']
+list(islice(it, 1, 4))      # -> ['d', 'e', 'f']  continues from where it left off
+list(islice("abcdefg", 0, None, 2))  # -> ['a', 'c', 'e', 'g']
+# no negative indices
+```
+
+### Take the first n from a generator
+
+```python
+from itertools import count, islice
+
+def primes():
+    found = []
+    for n in count(2):
+        if all(n % p for p in found):
+            found.append(n)
+            yield n
+
+list(islice(primes(), 5))  # -> [2, 3, 5, 7, 11]
+```
+
+### First item / default
+
+```python
+gen = (x for x in [3, 8, 10] if x % 2 == 0)
+next(gen, None)  # -> 8   first match or None
+```
+
+## Docs
+
+- [itertools.chain](https://docs.python.org/3.14/library/itertools.html#itertools.chain)
+- [itertools.chain.from_iterable](https://docs.python.org/3.14/library/itertools.html#itertools.chain.from_iterable)
+- [itertools.islice](https://docs.python.org/3.14/library/itertools.html#itertools.islice)
+- [next](https://docs.python.org/3.14/library/functions.html#next)

@@ -1,0 +1,220 @@
+---
+title: Threading primitives
+sidebar_position: 4
+---
+
+`threading` gives you OS threads plus sync primitives: `Lock`, `RLock`, `Condition`, `Semaphore`, `Event`; `queue.Queue` is a ready-made thread-safe producer-consumer queue. LLD rounds love "make it thread-safe" follow-ups: guard shared state (counters, spot maps, booking seats) with a lock and use `Condition`/`Queue` for blocking hand-offs.
+
+## Syntax
+
+```python
+import threading
+
+counter = 0
+lock = threading.Lock()
+
+def work() -> None:
+    global counter
+    for _ in range(10_000):
+        with lock:                  # critical section
+            counter += 1
+
+threads = [threading.Thread(target=work) for _ in range(4)]
+for t in threads:
+    t.start()
+for t in threads:
+    t.join()                        # wait for completion
+print(counter)                      # -> 40000
+```
+
+### Thread basics
+
+```python
+import threading
+
+def notify(user: str, channel: str = "email") -> None:
+    print(f"{channel} -> {user}")
+
+t = threading.Thread(target=notify, args=("amy",), kwargs={"channel": "sms"},
+                     name="notifier", daemon=True)   # daemon: won't block exit
+t.start()
+t.join(timeout=1.0)
+t.is_alive()                        # -> False
+threading.current_thread().name     # -> 'MainThread'
+```
+
+### Thread-safe counter class
+
+```python
+import threading
+
+class AtomicCounter:
+    def __init__(self) -> None:
+        self._value = 0
+        self._lock = threading.Lock()
+
+    def increment(self) -> int:
+        with self._lock:            # `+=` is read-modify-write, not atomic
+            self._value += 1
+            return self._value
+
+    @property
+    def value(self) -> int:
+        with self._lock:
+            return self._value
+
+c = AtomicCounter()
+ts = [threading.Thread(target=lambda: [c.increment() for _ in range(1000)]) for _ in range(8)]
+for t in ts: t.start()
+for t in ts: t.join()
+print(c.value)                      # -> 8000
+```
+
+### RLock (re-entrant: same thread can acquire again)
+
+```python
+import threading
+
+class ParkingLot:
+    def __init__(self) -> None:
+        self._lock = threading.RLock()
+        self._free = {"A1", "A2"}
+
+    def park(self) -> str | None:
+        with self._lock:
+            return self._free.pop() if self.has_space() else None
+
+    def has_space(self) -> bool:
+        with self._lock:            # would deadlock with a plain Lock
+            return bool(self._free)
+
+ParkingLot().park()
+```
+
+### Condition: bounded blocking queue
+
+```python
+import threading
+from collections import deque
+
+class BoundedBlockingQueue:
+    def __init__(self, capacity: int) -> None:
+        self._q: deque = deque()
+        self._cap = capacity
+        self._cond = threading.Condition()   # wraps an RLock by default
+
+    def put(self, item) -> None:
+        with self._cond:
+            while len(self._q) >= self._cap:  # always re-check in a while loop
+                self._cond.wait()             # releases lock while waiting
+            self._q.append(item)
+            self._cond.notify_all()
+
+    def get(self):
+        with self._cond:
+            while not self._q:
+                self._cond.wait()
+            item = self._q.popleft()
+            self._cond.notify_all()
+            return item
+
+    # wait_for(predicate) is a shortcut: self._cond.wait_for(lambda: self._q)
+
+bq = BoundedBlockingQueue(2)
+out: list[int] = []
+consumer = threading.Thread(target=lambda: out.extend(bq.get() for _ in range(5)))
+consumer.start()
+for i in range(5):
+    bq.put(i)                       # blocks when 2 items are pending
+consumer.join()
+print(out)                          # -> [0, 1, 2, 3, 4]
+```
+
+### Semaphore: cap concurrent access
+
+```python
+import threading
+import time
+
+pool = threading.BoundedSemaphore(3)    # e.g. 3 charging points / DB connections
+
+def charge(car: int) -> None:
+    with pool:                          # at most 3 threads inside at once
+        time.sleep(0.01)
+
+ts = [threading.Thread(target=charge, args=(i,)) for i in range(10)]
+for t in ts: t.start()
+for t in ts: t.join()
+# BoundedSemaphore raises ValueError if released more times than acquired
+```
+
+### Event: one-shot signal
+
+```python
+import threading
+
+ready = threading.Event()
+
+def worker() -> None:
+    ready.wait()                    # blocks until set(); wait(timeout) returns bool
+    print("go")
+
+t = threading.Thread(target=worker)
+t.start()
+ready.set()                         # wakes all waiters; clear() resets
+t.join()
+```
+
+### queue.Queue: producer-consumer
+
+```python
+import queue
+import threading
+
+jobs: queue.Queue[str] = queue.Queue(maxsize=10)   # bounded, thread-safe
+
+def consumer() -> None:
+    while True:
+        job = jobs.get()            # blocks; get(timeout=1) raises queue.Empty
+        if job is None:             # sentinel to stop
+            jobs.task_done()
+            break
+        print("sending", job)
+        jobs.task_done()
+
+t = threading.Thread(target=consumer)
+t.start()
+for n in ["email:amy", "sms:bo"]:
+    jobs.put(n)                     # blocks if full
+jobs.put(None)
+jobs.join()                         # wait until every item had task_done()
+t.join()
+# Also: queue.LifoQueue, queue.PriorityQueue, queue.SimpleQueue
+# 3.13+: jobs.shutdown() makes blocked get/put raise queue.ShutDown
+```
+
+### GIL and free-threading
+
+```python
+import sys
+
+# The GIL lets only one thread run Python bytecode at a time, so threads help
+# I/O-bound work but not CPU-bound work (use processes for that).
+# The free-threaded build (python3.14t) disables the GIL; officially
+# supported (no longer experimental) in 3.14 via PEP 779.
+print(sys._is_gil_enabled())        # 3.13+; False on a free-threaded build
+# Even with the GIL, `counter += 1` is NOT atomic: you still need locks.
+```
+
+## Docs
+
+- [threading.Thread](https://docs.python.org/3.14/library/threading.html#threading.Thread)
+- [Lock objects](https://docs.python.org/3.14/library/threading.html#lock-objects)
+- [RLock objects](https://docs.python.org/3.14/library/threading.html#rlock-objects)
+- [Condition objects](https://docs.python.org/3.14/library/threading.html#condition-objects)
+- [Semaphore objects](https://docs.python.org/3.14/library/threading.html#semaphore-objects)
+- [Event objects](https://docs.python.org/3.14/library/threading.html#event-objects)
+- [queue.Queue](https://docs.python.org/3.14/library/queue.html#queue.Queue)
+- [queue.Queue.shutdown](https://docs.python.org/3.14/library/queue.html#queue.Queue.shutdown)
+- [Free-threaded CPython (What's New in 3.14)](https://docs.python.org/3.14/whatsnew/3.14.html#whatsnew314-free-threaded-now-supported)
+- [Python support for free threading](https://docs.python.org/3.14/howto/free-threading-python.html)

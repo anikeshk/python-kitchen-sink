@@ -1,0 +1,131 @@
+---
+title: Context managers
+sidebar_position: 3
+---
+
+A context manager pairs setup with guaranteed teardown via `with`: `__enter__` runs on entry, `__exit__` always runs on exit (even on exceptions). In LLD rounds use them for locks, DB transactions, file/connection handles and "acquire then release" resources like a parking spot or a rate-limit token.
+
+## Syntax
+
+```python
+import threading
+
+lock = threading.Lock()
+with lock:                          # acquire(); ... ; release() even on error
+    ...
+
+with open("out.txt", "w") as f:     # file closed on exit
+    f.write("hi")
+```
+
+### Class-based: `__enter__` / `__exit__`
+
+```python
+class Transaction:
+    def __init__(self, db: dict) -> None:
+        self.db = db
+
+    def __enter__(self):
+        self.snapshot = dict(self.db)
+        return self                         # bound to the `as` target
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        if exc_type is not None:
+            self.db.clear()
+            self.db.update(self.snapshot)   # rollback
+        return False                        # False -> exception propagates
+
+db = {"balance": 100}
+try:
+    with Transaction(db):
+        db["balance"] -= 30
+        raise ValueError("payment failed")
+except ValueError:
+    pass
+print(db)                                   # -> {'balance': 100}
+```
+
+### Generator-based: contextlib.contextmanager
+
+```python
+from contextlib import contextmanager
+
+class ParkingLot:
+    def __init__(self) -> None:
+        self.free = ["A1", "A2"]
+
+    @contextmanager
+    def reserve(self):
+        spot = self.free.pop()              # setup (before yield)
+        try:
+            yield spot                      # value bound to `as`
+        finally:
+            self.free.append(spot)          # teardown (always runs)
+
+lot = ParkingLot()
+with lot.reserve() as spot:
+    print(spot, lot.free)                   # -> A2 ['A1']
+print(lot.free)                             # -> ['A1', 'A2']
+```
+
+### Multiple managers in one with
+
+```python
+import threading
+
+src_lock, dst_lock = threading.Lock(), threading.Lock()
+
+with src_lock, dst_lock:                    # entered left to right, exited in reverse
+    ...
+
+with (                                      # parenthesized form, 3.10+
+    open("a.txt", "w") as a,
+    open("b.txt", "w") as b,
+):
+    a.write("x")
+    b.write("y")
+```
+
+### Timer context manager
+
+```python
+import time
+from contextlib import contextmanager
+
+@contextmanager
+def timer(label: str):
+    start = time.perf_counter()
+    try:
+        yield
+    finally:
+        print(f"{label}: {time.perf_counter() - start:.4f}s")
+
+with timer("allocate"):
+    sum(range(10_000))
+```
+
+### Handy contextlib helpers
+
+```python
+from contextlib import suppress, ExitStack, nullcontext
+
+with suppress(KeyError):                    # swallow a specific exception
+    {}["missing"]
+
+with ExitStack() as stack:                  # dynamic number of managers
+    files = [stack.enter_context(open(f"f{i}.txt", "w")) for i in range(3)]
+
+def process(lock=None):
+    with lock or nullcontext():             # optional lock, no-op if None
+        ...
+```
+
+## Docs
+
+- [The with statement](https://docs.python.org/3.14/reference/compound_stmts.html#the-with-statement)
+- [With statement context managers (`__enter__` / `__exit__`)](https://docs.python.org/3.14/reference/datamodel.html#with-statement-context-managers)
+- [contextlib.contextmanager](https://docs.python.org/3.14/library/contextlib.html#contextlib.contextmanager)
+- [contextlib.suppress](https://docs.python.org/3.14/library/contextlib.html#contextlib.suppress)
+- [contextlib.ExitStack](https://docs.python.org/3.14/library/contextlib.html#contextlib.ExitStack)
+- [contextlib.nullcontext](https://docs.python.org/3.14/library/contextlib.html#contextlib.nullcontext)
+- [Using locks in the with statement](https://docs.python.org/3.14/library/threading.html#with-locks)

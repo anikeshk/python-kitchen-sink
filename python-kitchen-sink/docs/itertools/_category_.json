@@ -1,0 +1,9 @@
+{
+  "label": "itertools",
+  "position": 7,
+  "link": {
+    "type": "generated-index",
+    "slug": "/itertools",
+    "description": "Prefix sums, combinatorics, grouping and iterator helpers."
+  }
+}

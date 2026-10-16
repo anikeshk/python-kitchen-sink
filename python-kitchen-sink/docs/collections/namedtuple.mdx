@@ -1,0 +1,73 @@
+---
+title: namedtuple
+sidebar_position: 5
+---
+
+An immutable, hashable tuple with named fields. Use it for lightweight records (points, edges, events) that read better than `t[0]`; in LLD rounds prefer the typed `typing.NamedTuple` class form or a `dataclass`.
+
+## Syntax
+
+```python
+from collections import namedtuple
+
+Point = namedtuple("Point", ["x", "y"])
+p = Point(1, 2)
+p.x, p.y        # -> (1, 2)
+p[0]            # -> 1, still a tuple
+x, y = p        # unpacks
+```
+
+### Fields, defaults, conversion
+
+```python
+from collections import namedtuple
+Edge = namedtuple("Edge", "u v w", defaults=[1])  # w defaults to 1
+e = Edge(0, 1)
+e              # -> Edge(u=0, v=1, w=1)
+Edge._fields   # -> ('u', 'v', 'w')
+e._asdict()    # -> {'u': 0, 'v': 1, 'w': 1}
+Edge._make([2, 3, 4])  # -> Edge(u=2, v=3, w=4), from an iterable
+```
+
+### Immutable: _replace
+
+```python
+from collections import namedtuple
+Point = namedtuple("Point", "x y")
+p = Point(1, 2)
+# p.x = 5  -> AttributeError
+p2 = p._replace(x=5)  # -> Point(x=5, y=2), new object
+```
+
+### Hashable and comparable
+
+```python
+from collections import namedtuple
+Point = namedtuple("Point", "x y")
+seen = {Point(0, 0)}
+Point(0, 0) in seen              # -> True, usable as set/dict key
+sorted([Point(2, 1), Point(1, 5)])  # compares like tuples -> by x, then y
+```
+
+### typing.NamedTuple (class form)
+
+```python
+from typing import NamedTuple
+
+class Employee(NamedTuple):
+    name: str
+    salary: int = 0
+
+    def raise_by(self, pct: int) -> "Employee":
+        return self._replace(salary=self.salary * (100 + pct) // 100)
+
+e = Employee("amy", 100)
+e.raise_by(10)  # -> Employee(name='amy', salary=110)
+```
+
+## Docs
+
+- [collections.namedtuple](https://docs.python.org/3.14/library/collections.html#collections.namedtuple)
+- [namedtuple._replace](https://docs.python.org/3.14/library/collections.html#collections.somenamedtuple._replace)
+- [namedtuple._asdict](https://docs.python.org/3.14/library/collections.html#collections.somenamedtuple._asdict)
+- [typing.NamedTuple](https://docs.python.org/3.14/library/typing.html#typing.NamedTuple)

@@ -1,0 +1,123 @@
+---
+title: dict
+sidebar_position: 3
+---
+
+Hash map with O(1) average get/set/delete, and insertion order is guaranteed. The workhorse for frequency counts, value-to-index lookups (two sum), adjacency lists and memoization. See `collections.Counter` and `defaultdict` for common shortcuts.
+
+## Syntax
+
+```python
+d = {"a": 1, "b": 2}
+empty = {}                       # empty dict, NOT a set
+d2 = dict(a=1, b=2)
+d3 = dict([("a", 1), ("b", 2)])
+d4 = dict.fromkeys("abc", 0)     # -> {'a': 0, 'b': 0, 'c': 0}
+```
+
+### Access
+
+```python
+d = {"a": 1}
+d["a"]                 # -> 1; KeyError if missing
+d.get("z")             # -> None
+d.get("z", 0)          # -> 0, default
+d["b"] = 2             # insert or update, O(1)
+"a" in d               # -> True, checks keys, O(1) average
+len(d)                 # -> 2
+```
+
+### Counting
+
+```python
+freq: dict[str, int] = {}
+for c in "hello":
+    freq[c] = freq.get(c, 0) + 1   # -> {'h': 1, 'e': 1, 'l': 2, 'o': 1}
+```
+
+### setdefault
+
+```python
+graph: dict[int, list[int]] = {}
+for u, v in [(1, 2), (1, 3)]:
+    graph.setdefault(u, []).append(v)   # -> {1: [2, 3]}
+```
+
+### Remove
+
+```python
+d = {"a": 1, "b": 2, "c": 3}
+d.pop("a")             # -> 1; KeyError if missing
+d.pop("z", None)       # -> None, no error
+del d["b"]
+d.popitem()            # -> ('c', 3), removes last inserted (LIFO)
+```
+
+### Iteration and views
+
+```python
+d = {"a": 1, "b": 2}
+for k in d: ...
+for k, v in d.items(): ...
+for v in d.values(): ...
+d.keys()               # dynamic view, set-like
+d.keys() & {"a", "z"}  # -> {'a'}
+list(d)                # -> ['a', 'b'], insertion order
+```
+
+### Merge: `|` and `|=`
+
+```python
+a = {"x": 1, "y": 2}
+b = {"y": 9, "z": 3}
+a | b                  # -> {'x': 1, 'y': 9, 'z': 3}, right wins (3.9+)
+a |= b                 # in place, same as a.update(b)
+{**a, **b}             # older equivalent
+```
+
+### Comprehension
+
+```python
+nums = [2, 7, 11]
+idx = {x: i for i, x in enumerate(nums)}   # -> {2: 0, 7: 1, 11: 2}
+inv = {v: k for k, v in idx.items()}
+```
+
+### Sorting by value
+
+```python
+scores = {"a": 3, "b": 1, "c": 2}
+sorted(scores, key=scores.get)                        # -> ['b', 'c', 'a']
+sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+# -> [('a', 3), ('c', 2), ('b', 1)]
+max(scores, key=scores.get)                           # -> 'a'
+```
+
+### Deleting while iterating
+
+```python
+d = {"a": 1, "b": 0, "c": 0}
+# for k in d: del d[k]   -> RuntimeError: dictionary changed size during iteration
+for k in list(d):          # iterate over a snapshot of keys
+    if d[k] == 0:
+        del d[k]
+d = {k: v for k, v in d.items() if v != 0}   # or rebuild
+```
+
+### Keys must be hashable
+
+```python
+ok = {(1, 2): "tuple key", "s": 1, 3: 2, frozenset({1}): 0}
+# {[1, 2]: 0}  -> TypeError: unhashable type: 'list'
+```
+
+## Docs
+
+- [Dictionaries (tutorial)](https://docs.python.org/3.14/tutorial/datastructures.html#dictionaries)
+- [Mapping types: dict](https://docs.python.org/3.14/library/stdtypes.html#mapping-types-dict)
+- [dict.get](https://docs.python.org/3.14/library/stdtypes.html#dict.get)
+- [dict.setdefault](https://docs.python.org/3.14/library/stdtypes.html#dict.setdefault)
+- [Dictionary view objects](https://docs.python.org/3.14/library/stdtypes.html#dictionary-view-objects)
+- [Looping techniques](https://docs.python.org/3.14/tutorial/datastructures.html#looping-techniques)
+- [collections.defaultdict](https://docs.python.org/3.14/library/collections.html#collections.defaultdict)
+- [collections.Counter](https://docs.python.org/3.14/library/collections.html#collections.Counter)

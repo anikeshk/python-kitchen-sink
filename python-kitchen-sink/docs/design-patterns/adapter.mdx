@@ -1,0 +1,110 @@
+---
+title: Adapter
+sidebar_position: 8
+---
+
+Converts the interface of an existing (often third-party) class into the interface your code expects, so you can swap providers without touching callers. Shows up in LLD rounds when integrating payment gateways, SMS/email providers, legacy services or different map/geo APIs behind one interface.
+
+## Syntax
+
+```python
+from typing import Protocol
+
+# Your interface
+class PaymentGateway(Protocol):
+    def pay(self, order_id: str, amount: float) -> bool: ...
+
+# Third-party SDK you can't change (different names, units, return types)
+class StripeClient:
+    def create_charge(self, amount_cents: int, currency: str, metadata: dict) -> dict:
+        return {"status": "succeeded", "id": "ch_1"}
+
+class StripeAdapter:                        # implements PaymentGateway by composition
+    def __init__(self, client: StripeClient) -> None:
+        self._client = client
+
+    def pay(self, order_id: str, amount: float) -> bool:
+        resp = self._client.create_charge(
+            amount_cents=round(amount * 100),     # translate units
+            currency="usd",
+            metadata={"order_id": order_id},
+        )
+        return resp["status"] == "succeeded"      # translate result
+
+def checkout(gateway: PaymentGateway, order_id: str, amount: float) -> str:
+    return "paid" if gateway.pay(order_id, amount) else "failed"
+
+checkout(StripeAdapter(StripeClient()), "o1", 49.99)   # -> 'paid'
+```
+
+### Multiple providers behind one interface
+
+```python
+from abc import ABC, abstractmethod
+
+class PaymentGateway(ABC):
+    @abstractmethod
+    def pay(self, order_id: str, amount: float) -> bool: ...
+
+class RazorpaySdk:                          # another vendor, another shape
+    def capture(self, payload: dict) -> int:
+        return 200
+
+class RazorpayAdapter(PaymentGateway):
+    def __init__(self, sdk: RazorpaySdk) -> None:
+        self.sdk = sdk
+    def pay(self, order_id: str, amount: float) -> bool:
+        return self.sdk.capture({"ref": order_id, "paise": int(amount * 100)}) == 200
+
+class FakeGateway(PaymentGateway):          # adapters also make testing easy
+    def pay(self, order_id: str, amount: float) -> bool:
+        return True
+
+GATEWAYS: dict[str, PaymentGateway] = {
+    "razorpay": RazorpayAdapter(RazorpaySdk()),
+    "test": FakeGateway(),
+}
+GATEWAYS["razorpay"].pay("o2", 10)          # -> True
+```
+
+### Function adapter (wrap a callable)
+
+```python
+from typing import Callable
+
+def legacy_send_sms(phone_number: str, text: str, priority: int) -> str:
+    return f"SMS[{priority}] {phone_number}: {text}"
+
+type Sender = Callable[[str, str], str]     # 3.12+: what our code expects: (to, msg)
+
+def adapt_sms(fn) -> Sender:
+    return lambda to, msg: fn(phone_number=to, text=msg, priority=1)
+
+send: Sender = adapt_sms(legacy_send_sms)
+send("+911234", "OTP 4321")                 # -> 'SMS[1] +911234: OTP 4321'
+```
+
+### Class adapter (multiple inheritance)
+
+```python
+class Celsius:
+    def read(self) -> float: return 25.0
+
+class FahrenheitSensor:                     # interface we need
+    def temperature_f(self) -> float: raise NotImplementedError
+
+class CelsiusToF(FahrenheitSensor, Celsius):
+    def temperature_f(self) -> float:
+        return self.read() * 9 / 5 + 32
+
+CelsiusToF().temperature_f()                # -> 77.0
+# Prefer composition (object adapter) above: looser coupling, works with final classes.
+```
+
+## Docs
+
+- [typing.Protocol](https://docs.python.org/3.14/library/typing.html#typing.Protocol)
+- [abc.ABC](https://docs.python.org/3.14/library/abc.html#abc.ABC)
+- [abc.abstractmethod](https://docs.python.org/3.14/library/abc.html#abc.abstractmethod)
+- [Multiple inheritance (tutorial)](https://docs.python.org/3.14/tutorial/classes.html#multiple-inheritance)
+- [The type statement](https://docs.python.org/3.14/reference/simple_stmts.html#the-type-statement)

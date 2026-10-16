@@ -1,0 +1,9 @@
+{
+  "label": "heapq",
+  "position": 5,
+  "link": {
+    "type": "generated-index",
+    "slug": "/heapq",
+    "description": "Priority queues: min-heap, max-heap, tie-breaking, k-way merge."
+  }
+}

@@ -1,0 +1,109 @@
+---
+title: total_ordering and cached_property
+sidebar_position: 5
+---
+
+`@total_ordering` fills in the remaining comparison methods from `__eq__` plus one of `__lt__`/`__le__`/`__gt__`/`__ge__`. `@cached_property` computes an attribute once on first access and stores it on the instance. Both lean LLD (value objects, models) more than DSA.
+
+## Syntax
+
+```python
+from functools import total_ordering
+
+@total_ordering
+class Version:
+    def __init__(self, major: int, minor: int) -> None:
+        self.major, self.minor = major, minor
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Version):
+            return NotImplemented
+        return (self.major, self.minor) == (other.major, other.minor)
+
+    def __lt__(self, other: "Version") -> bool:
+        return (self.major, self.minor) < (other.major, other.minor)
+
+Version(1, 2) >= Version(1, 0)  # -> True  (__ge__ generated)
+```
+
+### Sorting and heapq with custom objects
+
+```python
+import heapq
+from functools import total_ordering
+
+@total_ordering
+class Task:
+    def __init__(self, priority: int, name: str) -> None:
+        self.priority, self.name = priority, name
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, Task) and self.priority == other.priority
+
+    def __lt__(self, other: "Task") -> bool:
+        return self.priority < other.priority
+
+h = [Task(3, "c"), Task(1, "a"), Task(2, "b")]
+heapq.heapify(h)               # heapq only needs __lt__
+heapq.heappop(h).name          # -> 'a'
+max(h).name                    # -> 'c'
+```
+
+### dataclass(order=True) alternative
+
+```python
+from dataclasses import dataclass, field
+
+@dataclass(order=True)           # generates all comparisons from field order
+class Job:
+    priority: int
+    name: str = field(compare=False)
+
+sorted([Job(2, "x"), Job(1, "y")])[0].name  # -> 'y'
+```
+
+### cached_property
+
+```python
+import math
+from functools import cached_property
+
+class Circle:
+    def __init__(self, r: float) -> None:
+        self.r = r
+
+    @cached_property
+    def area(self) -> float:     # computed on first access, then stored in __dict__
+        print("computing")
+        return math.pi * self.r ** 2
+
+c = Circle(2)
+c.area   # prints: computing
+c.area   # cached, no print
+del c.area  # invalidate; recomputed on next access
+```
+
+### cached_property vs property
+
+```python
+from functools import cached_property
+
+class Report:
+    def __init__(self, rows: list[int]) -> None:
+        self.rows = rows
+
+    @property
+    def count(self) -> int:         # recomputed every access, always fresh
+        return len(self.rows)
+
+    @cached_property
+    def total(self) -> int:         # computed once; stale if rows mutate
+        return sum(self.rows)
+# cached_property needs an instance __dict__ (no __slots__-only classes)
+```
+
+## Docs
+
+- [functools.total_ordering](https://docs.python.org/3.14/library/functools.html#functools.total_ordering)
+- [functools.cached_property](https://docs.python.org/3.14/library/functools.html#functools.cached_property)
+- [dataclasses: order parameter](https://docs.python.org/3.14/library/dataclasses.html#dataclasses.dataclass)

@@ -1,0 +1,113 @@
+---
+title: concurrent.futures
+sidebar_position: 5
+---
+
+High-level thread and process pools: submit callables, get back `Future`s, collect results. Use `ThreadPoolExecutor` for I/O-bound fan-out (sending notifications, calling payment/inventory services) and `ProcessPoolExecutor` for CPU-bound work. Far less code than managing `Thread`s and queues yourself.
+
+## Syntax
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+
+def send(user: str) -> str:
+    return f"notified {user}"
+
+with ThreadPoolExecutor(max_workers=4) as pool:   # shutdown(wait=True) on exit
+    fut = pool.submit(send, "amy")                # returns a Future immediately
+    print(fut.result())                           # blocks -> 'notified amy'
+```
+
+### map (results in input order)
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+
+def price(item: str) -> int:
+    return len(item) * 10
+
+with ThreadPoolExecutor() as pool:
+    prices = list(pool.map(price, ["tea", "coffee"]))   # -> [30, 60]
+    # pool.map(fn, xs, timeout=5) -> TimeoutError if not done in time
+    # 3.14+: pool.map(fn, xs, buffersize=100) bounds in-flight tasks for huge inputs
+```
+
+### as_completed (results as they finish)
+
+```python
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+def fetch_quote(provider: str, delay: float) -> tuple[str, float]:
+    time.sleep(delay)
+    return provider, delay * 100
+
+with ThreadPoolExecutor() as pool:
+    futures = {pool.submit(fetch_quote, p, d): p
+               for p, d in [("uber", 0.03), ("lyft", 0.01)]}
+    for fut in as_completed(futures):            # fastest first
+        provider = futures[fut]
+        try:
+            print(provider, fut.result())
+        except Exception as e:                   # exceptions re-raised by result()
+            print(provider, "failed:", e)
+```
+
+### wait (first completed / all completed)
+
+```python
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+
+with ThreadPoolExecutor() as pool:
+    futs = [pool.submit(pow, 2, n) for n in range(5)]
+    done, pending = wait(futs, timeout=2, return_when=FIRST_COMPLETED)
+    # return_when: FIRST_COMPLETED | FIRST_EXCEPTION | ALL_COMPLETED (default)
+```
+
+### Future API
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+
+with ThreadPoolExecutor() as pool:
+    f = pool.submit(sum, [1, 2, 3])
+    f.add_done_callback(lambda fut: print("done:", fut.result()))
+    f.result(timeout=1)              # -> 6
+    f.done(), f.cancelled()          # -> (True, False)
+    f.exception()                    # -> None if no error
+```
+
+### ProcessPoolExecutor (CPU-bound)
+
+```python
+from concurrent.futures import ProcessPoolExecutor
+
+def is_prime(n: int) -> bool:        # must be top-level (picklable)
+    return n > 1 and all(n % d for d in range(2, int(n ** 0.5) + 1))
+
+if __name__ == "__main__":           # required guard on spawn/forkserver platforms
+    with ProcessPoolExecutor() as pool:
+        print(list(pool.map(is_prime, [97, 100, 101], chunksize=1)))
+        # -> [True, False, True]
+```
+
+### InterpreterPoolExecutor (3.14+)
+
+```python
+from concurrent.futures import InterpreterPoolExecutor   # 3.14+
+
+# Each worker is an isolated subinterpreter with its own GIL: CPU parallelism
+# in one process, same API as the other executors.
+```
+
+## Docs
+
+- [concurrent.futures](https://docs.python.org/3.14/library/concurrent.futures.html)
+- [ThreadPoolExecutor](https://docs.python.org/3.14/library/concurrent.futures.html#threadpoolexecutor)
+- [Executor.submit](https://docs.python.org/3.14/library/concurrent.futures.html#concurrent.futures.Executor.submit)
+- [Executor.map](https://docs.python.org/3.14/library/concurrent.futures.html#concurrent.futures.Executor.map)
+- [as_completed](https://docs.python.org/3.14/library/concurrent.futures.html#concurrent.futures.as_completed)
+- [wait](https://docs.python.org/3.14/library/concurrent.futures.html#concurrent.futures.wait)
+- [Future objects](https://docs.python.org/3.14/library/concurrent.futures.html#future-objects)
+- [ProcessPoolExecutor](https://docs.python.org/3.14/library/concurrent.futures.html#processpoolexecutor)
+- [InterpreterPoolExecutor](https://docs.python.org/3.14/library/concurrent.futures.html#interpreterpoolexecutor)

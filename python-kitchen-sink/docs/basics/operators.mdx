@@ -1,0 +1,120 @@
+---
+title: Operators
+sidebar_position: 2
+---
+
+Arithmetic, comparison, identity, bitwise and conditional operators. The interview traps are `//` and `%` on negative numbers (Python floors, C/Java truncate), `is` vs `==`, and bit tricks for subset enumeration and flags.
+
+## Syntax
+
+```python
+a + b, a - b, a * b
+a / b     # true division, always float: 7 / 2 -> 3.5
+a // b    # floor division: 7 // 2 -> 3
+a % b     # modulo: 7 % 2 -> 1
+a ** b    # power: 2 ** 10 -> 1024
+```
+
+### Floor division and modulo with negatives
+
+```python
+-7 // 2      # -> -4  (floors toward -inf; C/Java give -3)
+-7 % 2       # -> 1   (sign follows divisor; C/Java give -1)
+7 % -2       # -> -1
+int(-7 / 2)  # -> -3  truncation toward zero, like C/Java
+# Invariant: a == (a // b) * b + a % b
+
+# Truncating division for ints without float precision loss:
+def trunc_div(a: int, b: int) -> int:
+    q = abs(a) // abs(b)
+    return q if (a >= 0) == (b >= 0) else -q
+```
+
+### Power and divmod
+
+```python
+2 ** -1             # -> 0.5
+pow(2, 10, 1000)    # -> 24, modular exponentiation, O(log exp)
+pow(3, -1, 7)       # -> 5, modular inverse
+divmod(17, 5)       # -> (3, 2)
+q, r = divmod(-7, 2)  # -> (-4, 1)
+```
+
+### Comparisons (chained)
+
+```python
+0 <= i < n           # same as 0 <= i and i < n
+a == b == c
+1 < 3 > 2            # -> True
+```
+
+### is vs ==
+
+```python
+a = [1, 2]
+b = [1, 2]
+a == b         # -> True, equal values
+a is b         # -> False, different objects
+x = None
+x is None      # use `is` for None, True, False singletons
+```
+
+### Bitwise
+
+```python
+5 & 3     # -> 1   AND
+5 | 3     # -> 7   OR
+5 ^ 3     # -> 6   XOR (a ^ a == 0, a ^ 0 == a)
+~5        # -> -6  NOT (-x - 1)
+1 << 4    # -> 16  multiply by 2**4
+20 >> 2   # -> 5   floor-divide by 2**2
+
+n = 12
+n & 1                # -> 0, odd/even check
+(n >> 2) & 1         # -> 1, test bit 2
+n | (1 << 0)         # -> 13, set bit 0
+n & ~(1 << 2)        # -> 8, clear bit 2
+n & (n - 1)          # -> 8, drop lowest set bit
+n & -n               # -> 4, isolate lowest set bit
+n.bit_count()        # -> 2, popcount (3.10+)
+n.bit_length()       # -> 4
+```
+
+### Walrus := (assignment expression)
+
+```python
+if (n := len(nums)) > 10:
+    print(n)
+while (line := f.readline()):
+    ...
+squares = [y for x in nums if (y := x * x) > 10]
+```
+
+### Ternary (conditional expression)
+
+```python
+sign = "pos" if x > 0 else "neg"
+lo = a if a < b else b
+```
+
+### Logical (short-circuit)
+
+```python
+a and b      # returns a if falsy, else b
+a or b       # returns a if truthy, else b
+name = given or "default"
+not x
+```
+
+## Docs
+
+- [Binary arithmetic operations](https://docs.python.org/3.14/reference/expressions.html#binary-arithmetic-operations)
+- [Comparisons](https://docs.python.org/3.14/reference/expressions.html#comparisons)
+- [Identity comparisons](https://docs.python.org/3.14/reference/expressions.html#is-not)
+- [Bitwise operations on integer types](https://docs.python.org/3.14/library/stdtypes.html#bitwise-operations-on-integer-types)
+- [Assignment expressions](https://docs.python.org/3.14/reference/expressions.html#assignment-expressions)
+- [Conditional expressions](https://docs.python.org/3.14/reference/expressions.html#conditional-expressions)
+- [Boolean operations](https://docs.python.org/3.14/reference/expressions.html#boolean-operations)
+- [divmod()](https://docs.python.org/3.14/library/functions.html#divmod)
+- [pow()](https://docs.python.org/3.14/library/functions.html#pow)
+- [int.bit_count()](https://docs.python.org/3.14/library/stdtypes.html#int.bit_count)

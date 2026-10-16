@@ -1,0 +1,117 @@
+---
+title: cache and lru_cache
+sidebar_position: 1
+---
+
+`@cache` memoizes a function by its arguments, turning a recursive solution into top-down DP in one line. `@lru_cache(maxsize=...)` is the same with an optional size bound. Arguments must be hashable.
+
+## Syntax
+
+```python
+from functools import cache
+
+@cache
+def fib(n: int) -> int:
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+fib(80)  # -> 23416728348467685   O(n) instead of O(2^n)
+```
+
+### lru_cache(maxsize=None)
+
+```python
+from functools import lru_cache
+
+@lru_cache(maxsize=None)  # identical to @cache (3.9+)
+def ways(n: int) -> int:
+    return 1 if n <= 1 else ways(n - 1) + ways(n - 2)
+
+@lru_cache(maxsize=128)   # bounded; evicts least recently used
+def expensive(x: int) -> int:
+    return x * x
+```
+
+### 2D DP with a nested function
+
+```python
+from functools import cache
+
+def unique_paths(m: int, n: int) -> int:
+    @cache                       # fresh cache per call, closes over m, n
+    def dp(r: int, c: int) -> int:
+        if r == m - 1 or c == n - 1:
+            return 1
+        return dp(r + 1, c) + dp(r, c + 1)
+    return dp(0, 0)
+
+unique_paths(3, 7)  # -> 28   O(m * n) states
+```
+
+### Arguments must be hashable
+
+```python
+from functools import cache
+
+@cache
+def total(nums: tuple[int, ...]) -> int:
+    return sum(nums)
+
+nums = [1, 2, 3]
+# total(nums)       # TypeError: unhashable type: 'list'
+total(tuple(nums))  # -> 6   convert list -> tuple, set -> frozenset
+# better: pass indices into a closed-over list instead of the list itself
+```
+
+### cache_clear() and cache_info()
+
+```python
+from functools import cache
+
+@cache
+def dp(i: int) -> int:
+    return i if i < 2 else dp(i - 1) + dp(i - 2)
+
+dp(30)
+dp.cache_info()   # CacheInfo(hits=28, misses=31, maxsize=None, currsize=31)
+dp.cache_clear()  # reset between test cases if the cached fn is module/class level
+```
+
+### Method vs nested function
+
+```python
+from functools import cache
+
+class Solution:
+    def climb_stairs(self, n: int) -> int:
+        @cache                  # preferred: new cache per call, no stale state
+        def dp(i: int) -> int:
+            return 1 if i <= 1 else dp(i - 1) + dp(i - 2)
+        return dp(n)
+
+    # @cache on a method: self is part of the key, the cache is shared by the
+    # class and keeps every instance alive. Avoid; use a nested fn instead.
+```
+
+### Recursion depth
+
+```python
+import sys
+from functools import cache
+
+sys.setrecursionlimit(10**6)  # default ~1000; deep memoized recursion hits it
+
+@cache
+def dp(i: int) -> int:
+    return 0 if i == 0 else dp(i - 1) + 1
+
+dp(5000)  # -> 5000
+# very deep recursion can still crash the C stack; convert to bottom-up DP if n ~ 10^5+
+```
+
+## Docs
+
+- [functools.cache](https://docs.python.org/3.14/library/functools.html#functools.cache)
+- [functools.lru_cache](https://docs.python.org/3.14/library/functools.html#functools.lru_cache)
+- [sys.setrecursionlimit](https://docs.python.org/3.14/library/sys.html#sys.setrecursionlimit)

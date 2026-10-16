@@ -1,0 +1,132 @@
+---
+title: Builder
+sidebar_position: 3
+---
+
+Constructs a complex object step by step, usually via a fluent API that returns `self`, then validates in `build()`. Shows up in LLD rounds for objects with many optional parts: HTTP requests, pizzas/burgers, search queries, notification messages. In Python, a `dataclass` with keyword arguments and defaults is often enough; reach for a builder when construction has ordering, validation or many steps.
+
+## Syntax
+
+```python
+from dataclasses import dataclass, field
+
+@dataclass(frozen=True)
+class Notification:
+    to: str
+    body: str
+    subject: str = ""
+    channels: tuple[str, ...] = ("email",)
+    priority: int = 0
+
+class NotificationBuilder:
+    def __init__(self, to: str) -> None:
+        self._to = to
+        self._body = ""
+        self._subject = ""
+        self._channels: list[str] = []
+        self._priority = 0
+
+    def subject(self, s: str) -> "NotificationBuilder":
+        self._subject = s
+        return self                     # return self -> chainable
+
+    def body(self, b: str) -> "NotificationBuilder":
+        self._body = b
+        return self
+
+    def via(self, *channels: str) -> "NotificationBuilder":
+        self._channels.extend(channels)
+        return self
+
+    def urgent(self) -> "NotificationBuilder":
+        self._priority = 10
+        return self
+
+    def build(self) -> Notification:
+        if not self._body:
+            raise ValueError("body is required")    # validate once, at the end
+        return Notification(self._to, self._body, self._subject,
+                            tuple(self._channels or ["email"]), self._priority)
+
+n = (NotificationBuilder("amy@x.com")
+     .subject("Booking confirmed")
+     .body("Seat 12A")
+     .via("email", "sms")
+     .urgent()
+     .build())
+```
+
+### Often enough: dataclass + keyword args
+
+```python
+from dataclasses import dataclass, field
+
+@dataclass
+class Pizza:
+    size: str = "medium"
+    crust: str = "thin"
+    toppings: list[str] = field(default_factory=list)   # never use a mutable default
+    extra_cheese: bool = False
+
+    def __post_init__(self) -> None:                    # validation hook
+        if self.size not in {"small", "medium", "large"}:
+            raise ValueError(self.size)
+
+Pizza(size="large", toppings=["olive"], extra_cheese=True)
+# Named args already give readability + optional params; no builder class needed.
+```
+
+### typing.Self for fluent methods (3.11+)
+
+```python
+from typing import Self
+
+class QueryBuilder:
+    def __init__(self, table: str) -> None:
+        self._table, self._where, self._limit = table, [], None
+
+    def where(self, cond: str) -> Self:     # 3.11+: subclasses keep their type
+        self._where.append(cond)
+        return self
+
+    def limit(self, n: int) -> Self:
+        self._limit = n
+        return self
+
+    def build(self) -> str:
+        sql = f"SELECT * FROM {self._table}"
+        if self._where:
+            sql += " WHERE " + " AND ".join(self._where)
+        if self._limit is not None:
+            sql += f" LIMIT {self._limit}"
+        return sql
+
+QueryBuilder("spots").where("free = 1").where("floor = 2").limit(5).build()
+# -> 'SELECT * FROM spots WHERE free = 1 AND floor = 2 LIMIT 5'
+```
+
+### Copy-with-changes: dataclasses.replace
+
+```python
+from dataclasses import dataclass, replace
+
+@dataclass(frozen=True)
+class Config:
+    host: str = "localhost"
+    port: int = 8080
+    debug: bool = False
+
+base = Config()
+prod = replace(base, host="api.example.com", port=443)   # new frozen instance
+# 3.13+: copy.replace(base, port=443) works on dataclasses, namedtuples, etc.
+```
+
+## Docs
+
+- [dataclasses](https://docs.python.org/3.14/library/dataclasses.html)
+- [dataclasses.field](https://docs.python.org/3.14/library/dataclasses.html#dataclasses.field)
+- [`__post_init__`](https://docs.python.org/3.14/library/dataclasses.html#dataclasses.__post_init__)
+- [dataclasses.replace](https://docs.python.org/3.14/library/dataclasses.html#dataclasses.replace)
+- [copy.replace](https://docs.python.org/3.14/library/copy.html#copy.replace)
+- [typing.Self](https://docs.python.org/3.14/library/typing.html#typing.Self)
+- [Keyword arguments](https://docs.python.org/3.14/tutorial/controlflow.html#keyword-arguments)

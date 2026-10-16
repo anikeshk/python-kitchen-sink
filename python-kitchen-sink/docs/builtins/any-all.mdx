@@ -1,0 +1,48 @@
+---
+title: any and all
+sidebar_position: 5
+---
+
+`any` returns `True` if at least one item is truthy, `all` if every item is. Pair them with a generator expression for one-line checks; both short-circuit, so they stop at the first deciding item.
+
+## Syntax
+
+```python
+nums = [2, 4, 7]
+any(x % 2 for x in nums)       # -> True, some odd number
+all(x > 0 for x in nums)       # -> True, all positive
+```
+
+### Short-circuit
+
+```python
+any(x > 3 for x in [1, 5, 2, 9])  # stops at 5, O(k) for the first k items
+all(x > 3 for x in [1, 5, 2, 9])  # stops at 1
+# Use a generator, not a list: any([...]) builds the whole list first
+```
+
+### Empty iterables
+
+```python
+any([])  # -> False (no item is true)
+all([])  # -> True  (vacuous truth): guard with `if nums and all(...)`
+```
+
+### Common checks
+
+```python
+s = "abc123"
+any(c.isdigit() for c in s)                        # has a digit
+all(c.isalnum() for c in s)                        # only alphanumerics
+nums = [1, 2, 2, 5]
+all(a <= b for a, b in zip(nums, nums[1:]))        # sorted ascending
+grid = [[0, 0], [0, 1]]
+any(1 in row for row in grid)                      # -> True, grid contains a 1
+all(v == 0 for row in grid for v in row)           # -> False, all zeros?
+```
+
+## Docs
+
+- [any](https://docs.python.org/3.14/library/functions.html#any)
+- [all](https://docs.python.org/3.14/library/functions.html#all)
+- [Generator expressions](https://docs.python.org/3.14/reference/expressions.html#generator-expressions)

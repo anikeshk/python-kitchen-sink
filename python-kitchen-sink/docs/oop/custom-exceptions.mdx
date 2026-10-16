@@ -1,0 +1,122 @@
+---
+title: Custom exceptions
+sidebar_position: 12
+---
+
+Define a small exception hierarchy rooted at one app-level base so callers can catch broadly (`AppError`) or precisely (`InsufficientFunds`). In LLD answers, domain exceptions with extra fields make error handling explicit and testable.
+
+## Syntax
+
+```python
+class AppError(Exception):
+    """Base for all app errors."""
+
+class ParkingFullError(AppError):
+    pass
+
+class InvalidTicketError(AppError):
+    pass
+
+try:
+    raise ParkingFullError("no spots on floor 2")
+except AppError as e:               # catches every subclass
+    print(type(e).__name__, e)      # -> ParkingFullError no spots on floor 2
+```
+
+### Exceptions with extra fields
+
+```python
+class AppError(Exception): ...
+
+class InsufficientFundsError(AppError):
+    def __init__(self, balance: float, amount: float) -> None:
+        super().__init__(f"need {amount}, have {balance}")   # sets str(e) / e.args
+        self.balance = balance
+        self.amount = amount
+
+try:
+    raise InsufficientFundsError(10, 25)
+except InsufficientFundsError as e:
+    print(e, e.amount - e.balance)  # -> need 25, have 10 15
+```
+
+### Catching: order matters (specific first)
+
+```python
+class AppError(Exception): ...
+class NotFoundError(AppError): ...
+
+def load(id: int) -> None:
+    raise NotFoundError(f"order {id}")
+
+try:
+    load(7)
+except NotFoundError as e:          # specific first
+    print("404:", e)                # -> 404: order 7
+except AppError:
+    print("generic app error")
+except (KeyError, ValueError):      # tuple = any of
+    ...
+else:
+    print("no error")
+finally:
+    print("cleanup")                # -> cleanup (always runs)
+```
+
+### Chaining: raise ... from
+
+```python
+class AppError(Exception): ...
+class ConfigError(AppError): ...
+
+def read_port(cfg: dict[str, str]) -> int:
+    try:
+        return int(cfg["port"])
+    except (KeyError, ValueError) as e:
+        raise ConfigError("bad port") from e   # keeps original as __cause__
+
+try:
+    read_port({})
+except ConfigError as e:
+    print(e, "<-", repr(e.__cause__))          # -> bad port <- KeyError('port')
+```
+
+### Exception notes: add_note (3.11+)
+
+```python
+class AppError(Exception): ...
+
+try:
+    try:
+        raise AppError("payment failed")
+    except AppError as e:
+        e.add_note("order_id=42")
+        e.add_note("retry=3")
+        raise
+except AppError as e:
+    print(e.__notes__)              # -> ['order_id=42', 'retry=3']
+    # notes are printed under the message in the traceback
+```
+
+### Grouped errors: ExceptionGroup and except* (3.11+)
+
+```python
+class AppError(Exception): ...
+class ValidationError(AppError): ...
+
+try:
+    raise ExceptionGroup("batch", [ValidationError("bad sku"), KeyError("qty")])
+except* ValidationError as eg:
+    print("validation:", eg.exceptions)   # -> validation: (ValidationError('bad sku'),)
+except* KeyError as eg:
+    print("missing:", eg.exceptions)      # -> missing: (KeyError('qty'),)
+```
+
+## Docs
+
+- [User-defined exceptions](https://docs.python.org/3.14/tutorial/errors.html#user-defined-exceptions)
+- [Exception hierarchy](https://docs.python.org/3.14/library/exceptions.html#exception-hierarchy)
+- [Exception chaining](https://docs.python.org/3.14/library/exceptions.html#exception-context)
+- [BaseException.add_note](https://docs.python.org/3.14/library/exceptions.html#BaseException.add_note)
+- [ExceptionGroup](https://docs.python.org/3.14/library/exceptions.html#ExceptionGroup)
+- [The try statement](https://docs.python.org/3.14/reference/compound_stmts.html#the-try-statement)

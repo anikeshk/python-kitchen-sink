@@ -1,0 +1,139 @@
+---
+title: str
+sidebar_position: 5
+---
+
+Immutable sequence of Unicode characters. Every "modification" creates a new string, so build results in a list and `''.join` them. Interviews use slicing, character classification, `ord`/`chr` for 26-letter count arrays, and two-pointer palindrome checks.
+
+## Syntax
+
+```python
+s = "hello"
+s = 'hello'
+multi = """line 1
+line 2"""
+raw = r"\d+"           # raw string, backslashes kept
+len(s)                 # -> 5
+```
+
+### Immutability
+
+```python
+s = "hello"
+try:
+    s[0] = "H"
+except TypeError:
+    pass               # 'str' object does not support item assignment
+s = "H" + s[1:]        # new string -> 'Hello'
+# s += c in a loop is O(n^2) worst case; use a list + join
+```
+
+### Indexing and slicing
+
+```python
+s = "abcdef"
+s[0], s[-1]      # -> ('a', 'f')
+s[1:4]           # -> 'bcd'
+s[::-1]          # -> 'fedcba', reversed
+s[::2]           # -> 'ace'
+```
+
+### split, join, strip
+
+```python
+"a b  c".split()           # -> ['a', 'b', 'c'], any whitespace
+"a,b,,c".split(",")        # -> ['a', 'b', '', 'c']
+"a.b.c".split(".", 1)      # -> ['a', 'b.c'], maxsplit
+",".join(["a", "b"])       # -> 'a,b'
+"  hi  ".strip()           # -> 'hi'; also lstrip, rstrip
+"xxhixx".strip("x")        # -> 'hi'
+"Hello".lower(), "Hello".upper()   # -> ('hello', 'HELLO')
+```
+
+### Character classification
+
+```python
+"a1".isalnum()     # -> True, letters or digits
+"123".isdigit()    # -> True
+"abc".isalpha()    # -> True
+" \t".isspace()    # -> True
+"abc".islower()    # -> True
+```
+
+### Searching
+
+```python
+s = "banana"
+s.find("an")        # -> 1; -1 if missing
+s.rfind("an")       # -> 3
+s.index("an")       # -> 1; ValueError if missing
+s.count("a")        # -> 3
+"nan" in s          # -> True, substring check
+s.startswith("ba"), s.endswith("na")   # -> (True, True)
+s.replace("a", "o")      # -> 'bonono'
+s.replace("a", "o", 1)   # -> 'bonana', first only
+```
+
+### ord and chr
+
+```python
+ord("a")                  # -> 97
+chr(98)                   # -> 'b'
+counts = [0] * 26
+for c in "abca":
+    counts[ord(c) - ord("a")] += 1   # letter -> index 0..25
+chr(ord("a") + 2)                    # -> 'c'
+```
+
+### Build with list + join
+
+```python
+parts = []
+for c in "abc":
+    parts.append(c.upper())
+result = "".join(parts)       # -> 'ABC', O(n) total
+```
+
+### string constants
+
+```python
+import string
+string.ascii_lowercase    # -> 'abcdefghijklmnopqrstuvwxyz'
+string.ascii_uppercase
+string.digits             # -> '0123456789'
+string.ascii_letters
+```
+
+### Reverse and palindrome check
+
+```python
+s = "racecar"
+s[::-1]                          # reversed copy
+"".join(reversed(s))
+s == s[::-1]                     # palindrome, O(n) space
+
+def is_palindrome(s: str) -> bool:   # O(1) space, skip non-alnum
+    i, j = 0, len(s) - 1
+    while i < j:
+        if not s[i].isalnum():
+            i += 1
+        elif not s[j].isalnum():
+            j -= 1
+        elif s[i].lower() != s[j].lower():
+            return False
+        else:
+            i, j = i + 1, j - 1
+    return True
+
+is_palindrome("A man, a plan, a canal: Panama")  # -> True
+```
+
+## Docs
+
+- [Text sequence type: str](https://docs.python.org/3.14/library/stdtypes.html#text-sequence-type-str)
+- [String methods](https://docs.python.org/3.14/library/stdtypes.html#string-methods)
+- [str.split](https://docs.python.org/3.14/library/stdtypes.html#str.split)
+- [str.join](https://docs.python.org/3.14/library/stdtypes.html#str.join)
+- [ord()](https://docs.python.org/3.14/library/functions.html#ord)
+- [chr()](https://docs.python.org/3.14/library/functions.html#chr)
+- [string constants](https://docs.python.org/3.14/library/string.html#string-constants)

@@ -1,0 +1,83 @@
+---
+title: reduce and operator
+sidebar_position: 3
+---
+
+`functools.reduce` folds an iterable into one value with a binary function. Use it for XOR-of-all, combining with a custom op, or gcd of a list; prefer `sum`, `math.prod`, `max` when they exist. The `operator` module supplies fast function versions of operators.
+
+## Syntax
+
+```python
+from functools import reduce
+
+reduce(lambda acc, x: acc + x, [1, 2, 3, 4])      # -> 10   O(n)
+reduce(lambda acc, x: acc + x, [], 0)             # -> 0    initializer for empty input
+```
+
+### Initializer
+
+```python
+from functools import reduce
+
+# reduce(f, [])           # TypeError: empty iterable with no initial value
+reduce(lambda acc, x: acc * 10 + x, [1, 2, 3], 0)  # -> 123   digits to int
+reduce(lambda acc, w: acc | {w[0]}, ["ab", "cd"], set())  # -> {'a', 'c'}
+```
+
+### XOR of all (Single Number, LC 136)
+
+```python
+from functools import reduce
+from operator import xor
+
+reduce(xor, [4, 1, 2, 1, 2])  # -> 4   O(n) time, O(1) space
+```
+
+### Product: prefer math.prod
+
+```python
+import math
+from functools import reduce
+from operator import mul
+
+reduce(mul, [1, 2, 3, 4], 1)  # -> 24
+math.prod([1, 2, 3, 4])       # -> 24  clearer, returns 1 for empty
+```
+
+### gcd / lcm of a list
+
+```python
+import math
+from functools import reduce
+
+reduce(math.gcd, [12, 18, 24])  # -> 6
+math.gcd(*[12, 18, 24])         # -> 6   variadic since 3.9
+```
+
+### operator helpers
+
+```python
+from operator import add, attrgetter, itemgetter, mul, xor
+
+pairs = [(1, "b"), (0, "a"), (1, "a")]
+sorted(pairs, key=itemgetter(0))      # sort by index 0
+sorted(pairs, key=itemgetter(0, 1))   # by (0, 1)
+max(pairs, key=itemgetter(1))         # -> (1, 'b')
+
+class Emp:
+    def __init__(self, name: str, age: int) -> None:
+        self.name, self.age = name, age
+
+emps = [Emp("x", 30), Emp("y", 25)]
+[e.name for e in sorted(emps, key=attrgetter("age"))]  # -> ['y', 'x']
+
+list(map(add, [1, 2], [10, 20]))      # -> [11, 22]
+```
+
+## Docs
+
+- [functools.reduce](https://docs.python.org/3.14/library/functools.html#functools.reduce)
+- [math.prod](https://docs.python.org/3.14/library/math.html#math.prod)
+- [operator module](https://docs.python.org/3.14/library/operator.html#module-operator)
+- [operator.itemgetter](https://docs.python.org/3.14/library/operator.html#operator.itemgetter)
+- [operator.attrgetter](https://docs.python.org/3.14/library/operator.html#operator.attrgetter)

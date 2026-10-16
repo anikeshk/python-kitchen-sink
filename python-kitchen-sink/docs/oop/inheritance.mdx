@@ -1,0 +1,114 @@
+---
+title: Inheritance
+sidebar_position: 2
+---
+
+A subclass reuses and specialises a base class; call `super().__init__` to initialise the parent's state and override methods to change behaviour. In LLD interviews use it for true "is-a" hierarchies (`Car` is a `Vehicle`) and prefer composition for "has-a".
+
+## Syntax
+
+```python
+class Vehicle:
+    def __init__(self, plate: str) -> None:
+        self.plate = plate
+
+    def fee(self, hours: int) -> int:
+        return 10 * hours
+
+class Truck(Vehicle):
+    def __init__(self, plate: str, axles: int) -> None:
+        super().__init__(plate)         # init parent state first
+        self.axles = axles
+
+    def fee(self, hours: int) -> int:   # override
+        return super().fee(hours) * self.axles
+
+t = Truck("TR-9", 3)
+print(t.plate, t.fee(2))                # -> TR-9 60
+```
+
+### Polymorphism: same call, different behaviour
+
+```python
+class Vehicle:
+    def fee(self, hours: int) -> int:
+        return 10 * hours
+
+class Bike(Vehicle):
+    def fee(self, hours: int) -> int:
+        return 5 * hours
+
+class Car(Vehicle):
+    pass                                # inherits fee
+
+for v in [Bike(), Car()]:
+    print(type(v).__name__, v.fee(3))   # -> Bike 15, Car 30
+```
+
+### Multiple inheritance and MRO
+
+```python
+class Electric:
+    def describe(self) -> str:
+        return "electric " + super().describe()   # cooperative: follows MRO
+
+class Vehicle:
+    def describe(self) -> str:
+        return "vehicle"
+
+class ElectricCar(Electric, Vehicle):
+    pass
+
+print(ElectricCar().describe())         # -> electric vehicle
+print([c.__name__ for c in ElectricCar.__mro__])
+# -> ['ElectricCar', 'Electric', 'Vehicle', 'object']
+```
+
+### Cooperative `__init__` with multiple bases
+
+```python
+class Base:
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+
+class Trackable(Base):
+    def __init__(self, gps_id: str, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.gps_id = gps_id
+
+class Vehicle(Base):
+    def __init__(self, plate: str, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.plate = plate
+
+class Taxi(Trackable, Vehicle):
+    pass
+
+t = Taxi(gps_id="g1", plate="KA-01")    # each class takes its kwargs, passes the rest on
+print(t.gps_id, t.plate)                # -> g1 KA-01
+```
+
+### Composition over inheritance
+
+```python
+class Engine:
+    def start(self) -> str:
+        return "vroom"
+
+class Car:                              # Car HAS-A Engine, not IS-A Engine
+    def __init__(self, engine: Engine) -> None:
+        self.engine = engine            # swap implementations easily (strategy-style)
+
+    def start(self) -> str:
+        return self.engine.start()
+
+print(Car(Engine()).start())            # -> vroom
+```
+
+## Docs
+
+- [Inheritance](https://docs.python.org/3.14/tutorial/classes.html#inheritance)
+- [Multiple inheritance](https://docs.python.org/3.14/tutorial/classes.html#multiple-inheritance)
+- [super](https://docs.python.org/3.14/library/functions.html#super)
+- [class.__mro__](https://docs.python.org/3.14/reference/datamodel.html#type.__mro__)
+- [The Python 2.3 MRO](https://docs.python.org/3.14/howto/mro.html)

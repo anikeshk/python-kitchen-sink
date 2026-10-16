@@ -1,0 +1,9 @@
+{
+  "label": "Built-in data structures",
+  "position": 2,
+  "link": {
+    "type": "generated-index",
+    "slug": "/data-structures",
+    "description": "list, tuple, dict, set, str and string formatting."
+  }
+}

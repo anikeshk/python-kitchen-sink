@@ -1,0 +1,97 @@
+---
+title: Protocols
+sidebar_position: 4
+---
+
+`typing.Protocol` defines an interface by shape (structural typing): any class with the right methods matches, no inheritance needed. Use it in LLD answers when you want duck-typed interfaces (`Notifier`, `Comparable`) that third-party or unrelated classes can satisfy.
+
+## Syntax
+
+```python
+from typing import Protocol
+
+class Notifier(Protocol):
+    def send(self, to: str, msg: str) -> None: ...
+
+class EmailNotifier:                    # does NOT inherit Notifier
+    def send(self, to: str, msg: str) -> None:
+        print(f"email {to}: {msg}")
+
+def alert(n: Notifier) -> None:         # type checker accepts anything with send()
+    n.send("ops", "lot full")
+
+alert(EmailNotifier())                  # -> email ops: lot full
+```
+
+### Runtime checks with @runtime_checkable
+
+```python
+from typing import Protocol, runtime_checkable
+
+@runtime_checkable
+class Chargeable(Protocol):
+    def charge(self, amount: float) -> bool: ...
+
+class Wallet:
+    def charge(self, amount: float) -> bool:
+        return True
+
+print(isinstance(Wallet(), Chargeable))   # -> True  (only checks method names exist)
+print(isinstance("cash", Chargeable))     # -> False
+```
+
+### Protocol with attributes / properties
+
+```python
+from typing import Protocol
+
+class HasId(Protocol):
+    id: int
+
+class Order:
+    def __init__(self, id: int) -> None:
+        self.id = id
+
+def key(x: HasId) -> int:
+    return x.id
+
+print(key(Order(7)))                    # -> 7
+```
+
+### Generic protocol (3.12+ syntax)
+
+```python
+from typing import Protocol
+
+class Repository[T](Protocol):
+    def get(self, id: int) -> T | None: ...
+    def add(self, item: T) -> None: ...
+
+class InMemoryRepo[T]:
+    def __init__(self) -> None:
+        self._items: dict[int, T] = {}
+    def get(self, id: int) -> T | None:
+        return self._items.get(id)
+    def add(self, item: T) -> None:
+        self._items[len(self._items)] = item
+
+repo: Repository[str] = InMemoryRepo[str]()
+repo.add("order-1")
+print(repo.get(0))                      # -> order-1
+```
+
+### Protocol vs ABC
+
+```python
+# ABC       -> nominal: must subclass; enforces at instantiation (TypeError);
+#              can ship shared concrete methods. Use for your own class hierarchy.
+# Protocol  -> structural: no subclassing; checked by the type checker
+#              (isinstance only with @runtime_checkable, names only, not signatures).
+#              Use for loose coupling / when you can't change the implementing classes.
+```
+
+## Docs
+
+- [typing.Protocol](https://docs.python.org/3.14/library/typing.html#typing.Protocol)
+- [typing.runtime_checkable](https://docs.python.org/3.14/library/typing.html#typing.runtime_checkable)
+- [Nominal vs structural subtyping](https://docs.python.org/3.14/library/typing.html#nominal-vs-structural-subtyping)

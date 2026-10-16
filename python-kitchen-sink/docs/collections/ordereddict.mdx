@@ -1,0 +1,90 @@
+---
+title: OrderedDict
+sidebar_position: 4
+---
+
+A dict that remembers insertion order and can reorder in O(1): `move_to_end` and `popitem(last=False)`. Plain `dict` also keeps insertion order (3.7+) but lacks those two operations, which is exactly what an LRU cache needs.
+
+## Syntax
+
+```python
+from collections import OrderedDict
+
+od = OrderedDict(a=1, b=2, c=3)
+od.move_to_end("a")         # -> order b, c, a, O(1)
+od.popitem(last=False)      # -> ('b', 2), pop oldest (FIFO), O(1)
+```
+
+### move_to_end
+
+```python
+from collections import OrderedDict
+od = OrderedDict.fromkeys("abc")
+od.move_to_end("a")               # to the back:  b, c, a
+od.move_to_end("c", last=False)   # to the front: c, b, a
+list(od)  # -> ['c', 'b', 'a']
+```
+
+### popitem
+
+```python
+from collections import OrderedDict
+od = OrderedDict(a=1, b=2, c=3)
+od.popitem()             # -> ('c', 3), LIFO (newest)
+od.popitem(last=False)   # -> ('a', 1), FIFO (oldest)
+```
+
+### LRU cache (LeetCode 146)
+
+```python
+from collections import OrderedDict
+
+class LRUCache:
+    def __init__(self, capacity: int):
+        self.cap = capacity
+        self.cache: OrderedDict[int, int] = OrderedDict()
+
+    def get(self, key: int) -> int:          # O(1)
+        if key not in self.cache:
+            return -1
+        self.cache.move_to_end(key)          # mark most recently used
+        return self.cache[key]
+
+    def put(self, key: int, value: int) -> None:  # O(1)
+        if key in self.cache:
+            self.cache.move_to_end(key)
+        self.cache[key] = value
+        if len(self.cache) > self.cap:
+            self.cache.popitem(last=False)   # evict least recently used
+
+lru = LRUCache(2)
+lru.put(1, 1); lru.put(2, 2)
+lru.get(1)        # -> 1
+lru.put(3, 3)     # evicts key 2
+lru.get(2)        # -> -1
+```
+
+### Plain dict alternative
+
+```python
+d = {"a": 1, "b": 2}
+d["a"] = d.pop("a")     # move to end: O(1) pop + reinsert
+oldest = next(iter(d))  # -> 'b', peek oldest key
+del d[oldest]           # evict
+```
+
+### Equality is order-sensitive
+
+```python
+from collections import OrderedDict
+OrderedDict(a=1, b=2) == OrderedDict(b=2, a=1)  # -> False
+dict(a=1, b=2) == dict(b=2, a=1)                # -> True
+```
+
+## Docs
+
+- [collections.OrderedDict](https://docs.python.org/3.14/library/collections.html#collections.OrderedDict)
+- [OrderedDict.move_to_end](https://docs.python.org/3.14/library/collections.html#collections.OrderedDict.move_to_end)
+- [OrderedDict.popitem](https://docs.python.org/3.14/library/collections.html#collections.OrderedDict.popitem)
+- [OrderedDict examples and recipes](https://docs.python.org/3.14/library/collections.html#ordereddict-examples-and-recipes)
+- [functools.lru_cache](https://docs.python.org/3.14/library/functools.html#functools.lru_cache)

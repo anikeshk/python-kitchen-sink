@@ -1,0 +1,184 @@
+---
+title: Decorators
+sidebar_position: 2
+---
+
+A decorator is a callable that takes a function (or class) and returns a replacement, applied with `@name`. In LLD rounds they keep cross-cutting concerns (timing, retry, logging, auth checks, caching) out of business logic. Always use `functools.wraps` so the wrapped function keeps its name and docstring.
+
+## Syntax
+
+```python
+import functools
+
+def log_calls(func):
+    @functools.wraps(func)                  # keeps __name__, __doc__, etc.
+    def wrapper(*args, **kwargs):
+        print(f"-> {func.__name__}{args}")
+        result = func(*args, **kwargs)
+        print(f"<- {func.__name__} = {result!r}")
+        return result
+    return wrapper
+
+@log_calls                                  # same as: park = log_calls(park)
+def park(vehicle: str) -> str:
+    return f"{vehicle} parked"
+
+park("KA-01")
+park.__name__                               # -> 'park' (thanks to wraps)
+```
+
+### Timing
+
+```python
+import functools
+import time
+
+def timed(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        try:
+            return func(*args, **kwargs)
+        finally:
+            print(f"{func.__name__} took {time.perf_counter() - start:.4f}s")
+    return wrapper
+
+@timed
+def allocate_spot() -> int:
+    return 42
+
+allocate_spot()
+```
+
+### Decorator with arguments: retry
+
+```python
+import functools
+import time
+
+def retry(times: int = 3, delay: float = 0.0, exceptions=(Exception,)):
+    def decorator(func):                    # three levels: args -> func -> call
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            for attempt in range(1, times + 1):
+                try:
+                    return func(*args, **kwargs)
+                except exceptions:
+                    if attempt == times:
+                        raise
+                    time.sleep(delay)
+        return wrapper
+    return decorator
+
+calls = 0
+
+@retry(times=3, exceptions=(ConnectionError,))
+def send_notification(msg: str) -> str:
+    global calls
+    calls += 1
+    if calls < 3:
+        raise ConnectionError("gateway down")
+    return f"sent: {msg}"
+
+print(send_notification("hi"))              # -> sent: hi (after 2 failures)
+```
+
+### Access check
+
+```python
+import functools
+
+class PermissionDenied(Exception):
+    pass
+
+def requires_role(role: str):
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(user: dict, *args, **kwargs):
+            if role not in user.get("roles", ()):
+                raise PermissionDenied(f"{user['name']} needs {role}")
+            return func(user, *args, **kwargs)
+        return wrapper
+    return decorator
+
+@requires_role("admin")
+def delete_floor(user: dict, floor_id: int) -> str:
+    return f"floor {floor_id} deleted"
+
+delete_floor({"name": "amy", "roles": ["admin"]}, 2)    # -> 'floor 2 deleted'
+```
+
+### Stacking (applied bottom-up)
+
+```python
+import functools
+
+def bold(f):
+    @functools.wraps(f)
+    def w(*a): return f"<b>{f(*a)}</b>"
+    return w
+
+def italic(f):
+    @functools.wraps(f)
+    def w(*a): return f"<i>{f(*a)}</i>"
+    return w
+
+@bold                    # outer
+@italic                  # inner, applied first
+def greet(name: str) -> str:
+    return f"hi {name}"
+
+greet("bo")              # -> '<b><i>hi bo</i></b>'
+```
+
+### Stateful decorator (counting calls) and built-in caching
+
+```python
+import functools
+
+def count_calls(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        wrapper.calls += 1
+        return func(*args, **kwargs)
+    wrapper.calls = 0
+    return wrapper
+
+@count_calls
+def ping() -> None: ...
+
+ping(); ping()
+ping.calls                                  # -> 2
+
+@functools.cache                            # memoize, unbounded
+def fare(zones: int) -> int:
+    return 10 + 5 * zones
+```
+
+### Class decorator
+
+```python
+REGISTRY: dict[str, type] = {}
+
+def register(cls):                          # receives the class, returns it
+    REGISTRY[cls.__name__.lower()] = cls
+    return cls
+
+@register
+class EmailNotifier: ...
+
+@register
+class SmsNotifier: ...
+
+REGISTRY                                    # -> {'emailnotifier': ..., 'smsnotifier': ...}
+# @dataclass, @functools.total_ordering are built-in class decorators
+```
+
+## Docs
+
+- [Function definitions (decorators)](https://docs.python.org/3.14/reference/compound_stmts.html#function-definitions)
+- [Class definitions (class decorators)](https://docs.python.org/3.14/reference/compound_stmts.html#class-definitions)
+- [Glossary: decorator](https://docs.python.org/3.14/glossary.html#term-decorator)
+- [functools.wraps](https://docs.python.org/3.14/library/functools.html#functools.wraps)
+- [functools.cache](https://docs.python.org/3.14/library/functools.html#functools.cache)
+- [time.perf_counter](https://docs.python.org/3.14/library/time.html#time.perf_counter)

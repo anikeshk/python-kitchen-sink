@@ -1,0 +1,9 @@
+{
+  "label": "Built-in functions",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "slug": "/builtins",
+    "description": "len/min/max, sorted, zip, any/all, numeric and conversion built-ins."
+  }
+}

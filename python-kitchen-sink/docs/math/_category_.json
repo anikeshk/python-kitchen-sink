@@ -1,0 +1,9 @@
+{
+  "label": "math & numbers",
+  "position": 9,
+  "link": {
+    "type": "generated-index",
+    "slug": "/math",
+    "description": "gcd/lcm, integer sqrt, combinatorics, logs, modular arithmetic."
+  }
+}

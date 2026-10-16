@@ -1,0 +1,128 @@
+---
+title: Type hints
+sidebar_position: 10
+---
+
+Annotations document intent and let type checkers catch bugs; Python itself doesn't enforce them at runtime. In LLD interviews, typed signatures make your class design readable at a glance. Use built-in generics (`list[int]`), `X | None`, and the 3.12+ generic syntax.
+
+## Syntax
+
+```python
+def find_spot(lot_id: int, size: str = "M") -> int | None:
+    ...
+
+count: int = 0
+plates: list[str] = []
+fees: dict[str, float] = {"car": 10.0}
+coords: tuple[int, int] = (1, 2)
+values: tuple[int, ...] = (1, 2, 3)     # variable length
+tags: set[str] = set()
+```
+
+### Optional and unions
+
+```python
+def get_owner(plate: str) -> str | None:   # 3.10+: X | None replaces Optional[X]
+    return None
+
+def parse(x: int | str) -> int:
+    return int(x)
+```
+
+### Callables
+
+```python
+from collections.abc import Callable, Iterable, Iterator
+
+Handler = Callable[[str, int], bool]       # (str, int) -> bool
+
+def on_event(cb: Callable[[str], None]) -> None:
+    cb("parked")
+
+def evens(xs: Iterable[int]) -> Iterator[int]:  # accept the loosest type you need
+    return (x for x in xs if x % 2 == 0)
+```
+
+### Generics: PEP 695 syntax (3.12+)
+
+```python
+class Stack[T]:                            # no TypeVar boilerplate
+    def __init__(self) -> None:
+        self._items: list[T] = []
+    def push(self, x: T) -> None:
+        self._items.append(x)
+    def pop(self) -> T:
+        return self._items.pop()
+
+def first[T](xs: list[T]) -> T:
+    return xs[0]
+
+def biggest[T: (int, float)](a: T, b: T) -> T:   # constrained type param
+    return max(a, b)
+
+s = Stack[int]()
+s.push(1)
+print(s.pop(), first(["a", "b"]))          # -> 1 a
+```
+
+### Type aliases: the type statement (3.12+)
+
+```python
+type Grid = list[list[int]]
+type Pair[T] = tuple[T, T]                 # generic alias
+type Json = dict[str, Json] | list[Json] | str | int | float | bool | None  # recursive OK
+
+def neighbors(g: Grid, p: Pair[int]) -> list[Pair[int]]:
+    ...
+```
+
+### typing.Self (3.11+)
+
+```python
+from typing import Self
+
+class QueryBuilder:
+    def __init__(self) -> None:
+        self.parts: list[str] = []
+    def where(self, cond: str) -> Self:    # subclasses get their own type back
+        self.parts.append(cond)
+        return self
+
+print(QueryBuilder().where("a").where("b").parts)  # -> ['a', 'b']
+```
+
+### Forward references: deferred annotations (3.14+)
+
+```python
+# 3.14+ (PEP 649/749): annotations are evaluated lazily, so a class can be
+# referenced before it's defined: no quotes, no `from __future__ import annotations`.
+class Node:
+    def __init__(self, val: int, next: Node | None = None) -> None:
+        self.val = val
+        self.next = next
+
+class Garage:
+    cars: list[Car]                        # Car is defined below; fine in 3.14
+
+class Car: ...
+
+print(Garage.__annotations__)              # -> {'cars': list[__main__.Car]}
+
+import annotationlib                       # 3.14+: inspect annotations safely
+print(annotationlib.get_annotations(Garage, format=annotationlib.Format.STRING))
+# -> {'cars': 'list[Car]'}
+# Pre-3.14: write "Node" / "Car" in quotes, or add `from __future__ import annotations`.
+```
+
+## Docs
+
+- [typing module](https://docs.python.org/3.14/library/typing.html)
+- [Union type (X | Y)](https://docs.python.org/3.14/library/stdtypes.html#types-union)
+- [Generic alias types (list[int])](https://docs.python.org/3.14/library/stdtypes.html#types-genericalias)
+- [collections.abc.Callable](https://docs.python.org/3.14/library/collections.abc.html#collections.abc.Callable)
+- [Generic classes and functions (type params)](https://docs.python.org/3.14/reference/compound_stmts.html#type-params)
+- [The type statement](https://docs.python.org/3.14/reference/simple_stmts.html#the-type-statement)
+- [typing.Self](https://docs.python.org/3.14/library/typing.html#typing.Self)
+- [Annotation scopes and lazy evaluation](https://docs.python.org/3.14/reference/executionmodel.html#annotation-scopes)
+- [annotationlib](https://docs.python.org/3.14/library/annotationlib.html)
+- [What's New 3.14: deferred evaluation of annotations](https://docs.python.org/3.14/whatsnew/3.14.html#whatsnew314-deferred-annotations)

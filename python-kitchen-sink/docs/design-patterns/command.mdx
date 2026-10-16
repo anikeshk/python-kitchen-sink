@@ -1,0 +1,148 @@
+---
+title: Command
+sidebar_position: 9
+---
+
+Wraps a request as an object with `execute()` (and usually `undo()`), so you can queue, log, retry or reverse it. Shows up in LLD rounds for text editors with undo/redo, remote controls/smart home, job schedulers, and transaction logs. Keep an undo stack of executed commands; a new command clears the redo stack.
+
+## Syntax
+
+```python
+from abc import ABC, abstractmethod
+
+class Document:
+    def __init__(self) -> None:
+        self.text = ""
+
+class Command(ABC):
+    @abstractmethod
+    def execute(self) -> None: ...
+    @abstractmethod
+    def undo(self) -> None: ...
+
+class Insert(Command):
+    def __init__(self, doc: Document, pos: int, s: str) -> None:
+        self.doc, self.pos, self.s = doc, pos, s
+    def execute(self) -> None:
+        t = self.doc.text
+        self.doc.text = t[:self.pos] + self.s + t[self.pos:]
+    def undo(self) -> None:
+        t = self.doc.text
+        self.doc.text = t[:self.pos] + t[self.pos + len(self.s):]
+
+class Delete(Command):
+    def __init__(self, doc: Document, pos: int, n: int) -> None:
+        self.doc, self.pos, self.n = doc, pos, n
+        self.removed = ""
+    def execute(self) -> None:
+        t = self.doc.text
+        self.removed = t[self.pos:self.pos + self.n]     # save state for undo
+        self.doc.text = t[:self.pos] + t[self.pos + self.n:]
+    def undo(self) -> None:
+        t = self.doc.text
+        self.doc.text = t[:self.pos] + self.removed + t[self.pos:]
+
+class Editor:
+    def __init__(self) -> None:
+        self.doc = Document()
+        self._undo: list[Command] = []              # stacks: O(1) push/pop
+        self._redo: list[Command] = []
+
+    def run(self, cmd: Command) -> None:
+        cmd.execute()
+        self._undo.append(cmd)
+        self._redo.clear()                          # new action invalidates redo
+
+    def undo(self) -> None:
+        if self._undo:
+            cmd = self._undo.pop()
+            cmd.undo()
+            self._redo.append(cmd)
+
+    def redo(self) -> None:
+        if self._redo:
+            cmd = self._redo.pop()
+            cmd.execute()
+            self._undo.append(cmd)
+
+ed = Editor()
+ed.run(Insert(ed.doc, 0, "hello"))
+ed.run(Insert(ed.doc, 5, " world"))
+ed.run(Delete(ed.doc, 0, 6))
+ed.doc.text                     # -> 'world'
+ed.undo(); ed.doc.text          # -> 'hello world'
+ed.undo(); ed.doc.text          # -> 'hello'
+ed.redo(); ed.doc.text          # -> 'hello world'
+```
+
+### Dataclass commands (less boilerplate)
+
+```python
+from dataclasses import dataclass, field
+
+@dataclass
+class Light:
+    on: bool = False
+
+@dataclass
+class TurnOn:
+    light: Light
+    _prev: bool = field(default=False, init=False)
+    def execute(self) -> None:
+        self._prev, self.light.on = self.light.on, True
+    def undo(self) -> None:
+        self.light.on = self._prev
+
+lamp = Light()
+cmd = TurnOn(lamp)
+cmd.execute(); lamp.on          # -> True
+cmd.undo(); lamp.on             # -> False
+```
+
+### Macro command (composite)
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class Macro:
+    commands: list
+
+    def execute(self) -> None:
+        for c in self.commands:
+            c.execute()
+
+    def undo(self) -> None:
+        for c in reversed(self.commands):   # undo in reverse order
+            c.undo()
+```
+
+### Command queue (scheduler / job runner)
+
+```python
+from collections import deque
+from typing import Callable
+
+jobs: deque[Callable[[], None]] = deque()       # plain callables are commands too
+jobs.append(lambda: print("send email"))
+jobs.append(lambda: print("charge card"))
+
+while jobs:
+    jobs.popleft()()                            # FIFO, O(1)
+```
+
+### Bounded history
+
+```python
+from collections import deque
+
+history: deque = deque(maxlen=100)      # keep only the last 100 commands for undo
+```
+
+## Docs
+
+- [abc.ABC](https://docs.python.org/3.14/library/abc.html#abc.ABC)
+- [abc.abstractmethod](https://docs.python.org/3.14/library/abc.html#abc.abstractmethod)
+- [dataclasses.field](https://docs.python.org/3.14/library/dataclasses.html#dataclasses.field)
+- [Using lists as stacks](https://docs.python.org/3.14/tutorial/datastructures.html#using-lists-as-stacks)
+- [collections.deque](https://docs.python.org/3.14/library/collections.html#collections.deque)

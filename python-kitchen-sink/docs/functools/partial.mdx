@@ -1,0 +1,82 @@
+---
+title: partial
+sidebar_position: 4
+---
+
+`functools.partial` returns a new callable with some arguments pre-bound. Use it to build key functions, callbacks and strategy objects (LLD) without writing a lambda or a small class.
+
+## Syntax
+
+```python
+from functools import partial
+
+def power(base: int, exp: int) -> int:
+    return base ** exp
+
+square = partial(power, exp=2)
+square(5)  # -> 25
+```
+
+### Pre-bind positional args
+
+```python
+from functools import partial
+
+int_from_bin = partial(int, base=2)
+int_from_bin("1011")  # -> 11
+
+log_error = partial(print, "[ERROR]")
+log_error("disk full")  # prints: [ERROR] disk full
+```
+
+### As a key function
+
+```python
+from functools import partial
+
+def dist(origin: tuple[int, int], p: tuple[int, int]) -> int:
+    return (p[0] - origin[0]) ** 2 + (p[1] - origin[1]) ** 2
+
+pts = [(3, 3), (1, 1), (5, 0)]
+sorted(pts, key=partial(dist, (0, 0)))  # -> [(1, 1), (3, 3), (5, 0)]
+```
+
+### Callbacks / event handlers (LLD)
+
+```python
+from functools import partial
+from collections.abc import Callable
+
+class Button:
+    def __init__(self) -> None:
+        self.handlers: list[Callable[[], None]] = []
+
+    def on_click(self, fn: Callable[[], None]) -> None:
+        self.handlers.append(fn)
+
+    def click(self) -> None:
+        for fn in self.handlers:
+            fn()
+
+def notify(user: str, msg: str) -> None:
+    print(f"{user}: {msg}")
+
+btn = Button()
+btn.on_click(partial(notify, "alice", "clicked"))  # zero-arg callback
+btn.click()  # prints: alice: clicked
+```
+
+### Inspect a partial
+
+```python
+from functools import partial
+
+p = partial(pow, 2)
+p.func, p.args, p.keywords  # -> (<built-in function pow>, (2,), {})
+p(10)                        # -> 1024
+```
+
+## Docs
+
+- [functools.partial](https://docs.python.org/3.14/library/functools.html#functools.partial)
+- [partial objects](https://docs.python.org/3.14/library/functools.html#partial-objects)

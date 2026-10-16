@@ -1,0 +1,9 @@
+{
+  "label": "functools",
+  "position": 8,
+  "link": {
+    "type": "generated-index",
+    "slug": "/functools",
+    "description": "Memoization, custom comparators, reduce, partial."
+  }
+}

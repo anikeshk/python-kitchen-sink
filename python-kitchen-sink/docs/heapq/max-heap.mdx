@@ -1,0 +1,82 @@
+---
+title: Max-heap
+sidebar_position: 2
+---
+
+Python 3.14 finally added public max-heap functions to `heapq` (`heappush_max`, `heappop_max`, ...). On older versions, or when your interviewer's environment is older, use the classic trick: push negated values into a min-heap.
+
+## Syntax
+
+```python
+import heapq
+
+heap = []
+heapq.heappush_max(heap, 3)   # 3.14+, O(log n)
+heapq.heappush_max(heap, 7)
+heapq.heappush_max(heap, 5)
+heap[0]                       # -> 7, peek max
+heapq.heappop_max(heap)       # -> 7
+```
+
+### All max-heap functions (3.14+)
+
+```python
+import heapq
+h = [3, 1, 4, 1, 5]
+heapq.heapify_max(h)           # O(n), h[0] -> 5
+heapq.heappush_max(h, 9)       # O(log n)
+heapq.heappop_max(h)           # -> 9
+heapq.heappushpop_max(h, 2)    # -> 5, push then pop max
+heapq.heapreplace_max(h, 0)    # -> 4, pop max then push
+```
+
+### Classic idiom: negate values (any version)
+
+```python
+import heapq
+nums = [3, 1, 4]
+heap = [-x for x in nums]
+heapq.heapify(heap)
+-heap[0]                  # -> 4, peek max
+heapq.heappush(heap, -10)
+-heapq.heappop(heap)      # -> 10
+```
+
+### Last Stone Weight (LeetCode 1046)
+
+```python
+import heapq
+
+def last_stone_weight(stones: list[int]) -> int:
+    heapq.heapify_max(stones)                 # 3.14+
+    while len(stones) > 1:
+        a = heapq.heappop_max(stones)
+        b = heapq.heappop_max(stones)
+        if a != b:
+            heapq.heappush_max(stones, a - b)
+    return stones[0] if stones else 0
+
+last_stone_weight([2, 7, 4, 1, 8, 1])  # -> 1
+```
+
+### Max-heap of tuples: negate the key
+
+```python
+import heapq
+counts = {"a": 3, "b": 5, "c": 1}
+heap = [(-cnt, ch) for ch, cnt in counts.items()]  # max count, then min char
+heapq.heapify(heap)
+cnt, ch = heapq.heappop(heap)
+-cnt, ch  # -> (5, 'b')
+# heappush_max on tuples would also reverse the tiebreaker, so negation is
+# still the go-to when you need max on one field and min on another.
+```
+
+## Docs
+
+- [heapq.heappush_max](https://docs.python.org/3.14/library/heapq.html#heapq.heappush_max)
+- [heapq.heappop_max](https://docs.python.org/3.14/library/heapq.html#heapq.heappop_max)
+- [heapq.heapify_max](https://docs.python.org/3.14/library/heapq.html#heapq.heapify_max)
+- [heapq.heappushpop_max](https://docs.python.org/3.14/library/heapq.html#heapq.heappushpop_max)
+- [heapq.heapreplace_max](https://docs.python.org/3.14/library/heapq.html#heapq.heapreplace_max)
+- [What's new in 3.14: heapq](https://docs.python.org/3.14/whatsnew/3.14.html#heapq)

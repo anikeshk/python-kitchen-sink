@@ -1,0 +1,67 @@
+---
+title: iter and next
+sidebar_position: 8
+---
+
+`iter` turns an iterable into an iterator; `next` pulls one item. The killer interview idiom is `next(generator, default)` to find the first match in one line. Remember that iterators (and generators, `map`, `zip`) can only be consumed once.
+
+## Syntax
+
+```python
+nums = [-2, 3, 5]
+next((x for x in nums if x > 0), -1)  # -> 3, first match or -1
+```
+
+### iter and next
+
+```python
+it = iter([1, 2, 3])
+next(it)  # -> 1
+next(it)  # -> 2
+next(it)  # -> 3
+# next(it) now raises StopIteration
+next(it, None)  # -> None, default instead of StopIteration
+```
+
+### First index matching a condition
+
+```python
+nums = [4, 7, 9]
+next((i for i, x in enumerate(nums) if x > 5), -1)  # -> 1
+```
+
+### Iterators are exhausted once
+
+```python
+it = (x * x for x in range(3))
+list(it)  # -> [0, 1, 4]
+list(it)  # -> [], already consumed
+sq = [x * x for x in range(3)]  # use a list if you need multiple passes
+```
+
+### Subsequence check with a shared iterator
+
+```python
+def is_subsequence(s: str, t: str) -> bool:
+    it = iter(t)
+    return all(c in it for c in s)  # `in` advances it, O(len(t))
+
+is_subsequence("ace", "abcde")  # -> True
+is_subsequence("aec", "abcde")  # -> False
+```
+
+### Skip a header / take the first item
+
+```python
+rows = iter([["name", "age"], ["a", 1]])
+header = next(rows)  # consume first row
+for row in rows:     # continues after the header
+    print(row)
+```
+
+## Docs
+
+- [iter](https://docs.python.org/3.14/library/functions.html#iter)
+- [next](https://docs.python.org/3.14/library/functions.html#next)
+- [Iterator types](https://docs.python.org/3.14/library/stdtypes.html#iterator-types)
+- [Glossary: iterator](https://docs.python.org/3.14/glossary.html#term-iterator)

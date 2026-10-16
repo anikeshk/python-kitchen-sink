@@ -1,0 +1,106 @@
+---
+title: Classes and objects
+sidebar_position: 1
+---
+
+A class bundles state (attributes) and behaviour (methods); each instance gets its own state via `__init__`. In LLD rounds this is the building block for every entity: `ParkingLot`, `Vehicle`, `Account`, `Order`.
+
+## Syntax
+
+```python
+class Vehicle:
+    wheels = 4                      # class attribute: shared by all instances
+
+    def __init__(self, plate: str, color: str) -> None:
+        self.plate = plate          # instance attributes: per object
+        self.color = color
+
+    def describe(self) -> str:      # instance method: self is the instance
+        return f"{self.color} vehicle {self.plate}"
+
+car = Vehicle("KA-01", "red")
+print(car.describe())               # -> red vehicle KA-01
+```
+
+### Instance vs class attributes
+
+```python
+class Vehicle:
+    wheels = 4
+    def __init__(self, plate: str) -> None:
+        self.plate = plate
+
+a, b = Vehicle("A1"), Vehicle("B2")
+Vehicle.wheels = 6                  # changes it for every instance
+print(a.wheels, b.wheels)           # -> 6 6
+a.wheels = 3                        # creates an instance attr that shadows the class attr
+print(a.wheels, b.wheels)           # -> 3 6
+print(a.__dict__)                   # -> {'plate': 'A1', 'wheels': 3}
+```
+
+### Pitfall: mutable class attribute is shared
+
+```python
+class ParkingLot:
+    spots = []                      # BUG: one list shared by every lot
+
+    def park(self, plate: str) -> None:
+        self.spots.append(plate)
+
+p1, p2 = ParkingLot(), ParkingLot()
+p1.park("KA-01")
+print(p2.spots)                     # -> ['KA-01']  (leaked!)
+
+class ParkingLot:
+    def __init__(self) -> None:
+        self.spots: list[str] = []  # FIX: create per instance in __init__
+```
+
+### Counter via class attribute (IDs)
+
+```python
+class Order:
+    _next_id = 1
+
+    def __init__(self, item: str) -> None:
+        self.id = Order._next_id    # assign via the class, not self
+        Order._next_id += 1
+        self.item = item
+
+print(Order("pen").id, Order("ink").id)  # -> 1 2
+```
+
+### isinstance and type checks
+
+```python
+class Vehicle: ...
+class Car(Vehicle): ...
+
+c = Car()
+print(isinstance(c, Vehicle))           # -> True  (respects inheritance)
+print(isinstance(c, (int, Vehicle)))    # -> True  (tuple = any of)
+print(type(c) is Vehicle)               # -> False (exact type only)
+print(issubclass(Car, Vehicle))         # -> True
+```
+
+### getattr / setattr / hasattr
+
+```python
+class Account:
+    def __init__(self) -> None:
+        self.balance = 0
+
+acc = Account()
+setattr(acc, "owner", "ann")
+print(getattr(acc, "owner"))            # -> ann
+print(getattr(acc, "missing", None))    # -> None (default instead of AttributeError)
+print(hasattr(acc, "balance"))          # -> True
+```
+
+## Docs
+
+- [Classes tutorial](https://docs.python.org/3.14/tutorial/classes.html#a-first-look-at-classes)
+- [Class and instance variables](https://docs.python.org/3.14/tutorial/classes.html#class-and-instance-variables)
+- [Class definitions](https://docs.python.org/3.14/reference/compound_stmts.html#class-definitions)
+- [isinstance](https://docs.python.org/3.14/library/functions.html#isinstance)
+- [getattr](https://docs.python.org/3.14/library/functions.html#getattr)

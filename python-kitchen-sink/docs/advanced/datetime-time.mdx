@@ -1,0 +1,141 @@
+---
+title: datetime and time
+sidebar_position: 6
+---
+
+`datetime` handles calendar dates/times and durations; `time` gives raw clocks. In LLD rounds you need them for booking/reservation windows, parking fees, expiry/TTL, and rate limiters. Rule of thumb: store timezone-aware UTC datetimes, and measure elapsed time with `time.monotonic()`.
+
+## Syntax
+
+```python
+from datetime import datetime, timedelta, timezone
+
+now = datetime.now(timezone.utc)            # aware, UTC: prefer this
+expires_at = now + timedelta(minutes=15)
+if datetime.now(timezone.utc) >= expires_at:
+    ...                                     # expired
+```
+
+### Naive vs aware
+
+```python
+from datetime import datetime, timezone, UTC
+from zoneinfo import ZoneInfo
+
+datetime.now()                              # naive local time (tzinfo=None)
+datetime.now(timezone.utc)                  # aware UTC
+datetime.now(UTC)                           # UTC alias, 3.11+
+ist = datetime.now(ZoneInfo("Asia/Kolkata"))
+ist.astimezone(UTC)                         # convert zones
+# Comparing naive with aware raises TypeError
+# datetime.utcnow() is deprecated (3.12): use datetime.now(UTC)
+```
+
+### timedelta arithmetic (parking fee)
+
+```python
+import math
+from datetime import datetime, timedelta
+
+entry = datetime(2026, 1, 1, 9, 0)
+exit_ = datetime(2026, 1, 1, 11, 20)
+stay: timedelta = exit_ - entry             # -> timedelta(seconds=8400)
+stay.total_seconds()                        # -> 8400.0 (.seconds is only the 0-86399 part!)
+hours = math.ceil(stay / timedelta(hours=1))   # timedelta / timedelta -> float; -> 3
+fee = hours * 50                            # -> 150
+timedelta(days=1, hours=2) * 2              # -> timedelta(days=2, seconds=14400)
+```
+
+### Formatting and parsing
+
+```python
+from datetime import datetime, date
+
+dt = datetime(2026, 3, 5, 14, 30)
+dt.strftime("%Y-%m-%d %H:%M")               # -> '2026-03-05 14:30'
+datetime.strptime("05/03/2026 14:30", "%d/%m/%Y %H:%M")
+dt.isoformat()                              # -> '2026-03-05T14:30:00'
+datetime.fromisoformat("2026-03-05T14:30:00+05:30")   # aware
+datetime.fromisoformat("2026-03-05T14:30:00Z")        # 'Z' accepted, 3.11+
+date.fromisoformat("2026-03-05")
+date.strptime("2026-03-05", "%Y-%m-%d")     # 3.14+ (date/time.strptime)
+```
+
+### Booking overlap check
+
+```python
+from datetime import datetime
+
+def overlaps(a_start: datetime, a_end: datetime,
+             b_start: datetime, b_end: datetime) -> bool:
+    return a_start < b_end and b_start < a_end   # half-open [start, end)
+
+bookings = [(datetime(2026, 5, 1, 10), datetime(2026, 5, 1, 11))]
+req = (datetime(2026, 5, 1, 10, 30), datetime(2026, 5, 1, 12))
+any(overlaps(*req, *b) for b in bookings)       # -> True (conflict)
+
+d1, d2 = datetime(2026, 5, 1), datetime(2026, 5, 3)
+d1 < d2, max(d1, d2), sorted([d2, d1])          # datetimes are comparable
+```
+
+### date and time parts
+
+```python
+from datetime import date, datetime, time
+
+today = date.today()
+dt = datetime.combine(today, time(18, 0))       # today at 18:00
+dt.date(), dt.time(), dt.weekday()              # Mon=0 .. Sun=6
+dt.replace(hour=0, minute=0)                    # new object; datetimes are immutable
+(date(2026, 12, 25) - today).days               # days until
+```
+
+### time.time vs time.monotonic
+
+```python
+import time
+
+time.time()          # wall clock (epoch secs); can jump (NTP, DST): use for timestamps
+time.monotonic()     # never goes backwards: use for timeouts, TTLs, rate limiters
+time.perf_counter()  # highest resolution: use for benchmarking
+time.sleep(0.01)
+```
+
+### Sliding-window rate limiter with monotonic
+
+```python
+import time
+from collections import deque
+
+class RateLimiter:
+    def __init__(self, max_requests: int, window_s: float) -> None:
+        self.max, self.window = max_requests, window_s
+        self.hits: deque[float] = deque()
+
+    def allow(self) -> bool:
+        now = time.monotonic()
+        while self.hits and now - self.hits[0] >= self.window:
+            self.hits.popleft()                 # drop expired; amortized O(1)
+        if len(self.hits) < self.max:
+            self.hits.append(now)
+            return True
+        return False
+
+rl = RateLimiter(2, 1.0)
+[rl.allow() for _ in range(3)]                  # -> [True, True, False]
+```
+
+## Docs
+
+- [datetime module](https://docs.python.org/3.14/library/datetime.html)
+- [Aware and naive objects](https://docs.python.org/3.14/library/datetime.html#aware-and-naive-objects)
+- [datetime.now](https://docs.python.org/3.14/library/datetime.html#datetime.datetime.now)
+- [timedelta objects](https://docs.python.org/3.14/library/datetime.html#timedelta-objects)
+- [timedelta.total_seconds](https://docs.python.org/3.14/library/datetime.html#datetime.timedelta.total_seconds)
+- [datetime.fromisoformat](https://docs.python.org/3.14/library/datetime.html#datetime.datetime.fromisoformat)
+- [strftime() and strptime() format codes](https://docs.python.org/3.14/library/datetime.html#format-codes)
+- [datetime.UTC](https://docs.python.org/3.14/library/datetime.html#datetime.UTC)
+- [zoneinfo](https://docs.python.org/3.14/library/zoneinfo.html)
+- [time.time](https://docs.python.org/3.14/library/time.html#time.time)
+- [time.monotonic](https://docs.python.org/3.14/library/time.html#time.monotonic)
+- [time.perf_counter](https://docs.python.org/3.14/library/time.html#time.perf_counter)

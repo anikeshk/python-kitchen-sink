@@ -1,0 +1,94 @@
+---
+title: set
+sidebar_position: 4
+---
+
+Unordered collection of unique hashable items with O(1) average add/remove/membership. Use it for visited sets, deduplication, and fast lookups. `frozenset` is the immutable, hashable variant you can use as a dict key or put inside another set.
+
+## Syntax
+
+```python
+s = {1, 2, 3}
+empty = set()          # {} is an empty dict, not a set
+from_list = set([1, 1, 2])   # -> {1, 2}
+chars = set("hello")         # -> {'h', 'e', 'l', 'o'}
+```
+
+### Add and remove
+
+```python
+s = {1, 2, 3}
+s.add(4)               # O(1) average
+s.remove(4)            # KeyError if missing
+s.discard(99)          # no error if missing
+x = s.pop()            # removes an arbitrary element; KeyError if empty
+s.update([5, 6])       # add many
+s.clear()
+```
+
+### Membership: O(1) average
+
+```python
+seen = set()
+for x in [1, 2, 1]:
+    if x in seen:
+        print("duplicate", x)
+    seen.add(x)
+len(set(nums)) != len(nums)   # has duplicates?
+```
+
+### Set operations
+
+```python
+a = {1, 2, 3}
+b = {2, 3, 4}
+a | b          # -> {1, 2, 3, 4}  union
+a & b          # -> {2, 3}        intersection
+a - b          # -> {1}           difference
+a ^ b          # -> {1, 4}        symmetric difference
+a |= b         # in-place forms: |=, &=, -=, ^=
+```
+
+### Method forms (accept any iterable)
+
+```python
+a = {1, 2, 3}
+a.union([3, 4])                 # -> {1, 2, 3, 4}
+a.intersection(range(2, 10))    # -> {2, 3}
+a.difference([1])               # -> {2, 3}
+a.symmetric_difference([3, 4])  # -> {1, 2, 4}
+a.intersection_update([1, 2])   # in place
+set.intersection(*[{1, 2}, {2, 3}, {2, 4}])   # -> {2}, many sets
+```
+
+### Subset and superset
+
+```python
+{1, 2} <= {1, 2, 3}       # -> True, subset
+{1, 2} < {1, 2}           # -> False, proper subset
+{1, 2, 3} >= {1}          # -> True, superset
+{1, 2}.issubset([1, 2, 3])
+{1, 2}.isdisjoint({3, 4}) # -> True
+```
+
+### frozenset: hashable set
+
+```python
+fs = frozenset([1, 2])
+seen_states = {fs}                    # set of sets
+memo = {frozenset({"a", "b"}): 1}     # order-independent key
+frozenset({1, 2}) == frozenset({2, 1})   # -> True
+```
+
+### Comprehension
+
+```python
+lengths = {len(w) for w in ["a", "bb", "cc"]}   # -> {1, 2}
+```
+
+## Docs
+
+- [Sets (tutorial)](https://docs.python.org/3.14/tutorial/datastructures.html#sets)
+- [Set types: set, frozenset](https://docs.python.org/3.14/library/stdtypes.html#set-types-set-frozenset)
+- [frozenset](https://docs.python.org/3.14/library/stdtypes.html#frozenset)
+- [set.discard](https://docs.python.org/3.14/library/stdtypes.html#set.discard)

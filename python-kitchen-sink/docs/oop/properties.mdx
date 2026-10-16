@@ -1,0 +1,109 @@
+---
+title: Properties
+sidebar_position: 5
+---
+
+`@property` lets you expose an attribute while running code on get/set/delete, so callers keep writing `obj.x`. Use it in LLD answers for validation (non-negative balance), read-only fields, and computed attributes.
+
+## Syntax
+
+```python
+class Account:
+    def __init__(self, balance: float) -> None:
+        self.balance = balance          # goes through the setter -> validated
+
+    @property
+    def balance(self) -> float:         # getter
+        return self._balance
+
+    @balance.setter
+    def balance(self, value: float) -> None:
+        if value < 0:
+            raise ValueError("balance cannot be negative")
+        self._balance = value
+
+acc = Account(100)
+acc.balance = 50
+print(acc.balance)                      # -> 50
+try:
+    acc.balance = -1
+except ValueError as e:
+    print(e)                            # -> balance cannot be negative
+```
+
+### Read-only attribute (getter only)
+
+```python
+class Vehicle:
+    def __init__(self, plate: str) -> None:
+        self._plate = plate
+
+    @property
+    def plate(self) -> str:
+        return self._plate
+
+v = Vehicle("KA-01")
+try:
+    v.plate = "X"
+except AttributeError as e:
+    print(e)                            # -> property 'plate' of 'Vehicle' object has no setter
+```
+
+### Computed property
+
+```python
+class Order:
+    def __init__(self, prices: list[float]) -> None:
+        self.prices = prices
+
+    @property
+    def total(self) -> float:           # recomputed on each access, O(n)
+        return sum(self.prices)
+
+print(Order([2.5, 7.5]).total)          # -> 10.0
+```
+
+### Deleter
+
+```python
+class Session:
+    def __init__(self) -> None:
+        self._token: str | None = "abc"
+
+    @property
+    def token(self) -> str | None:
+        return self._token
+
+    @token.deleter
+    def token(self) -> None:
+        print("logging out")
+        self._token = None
+
+s = Session()
+del s.token                             # -> logging out
+print(s.token)                          # -> None
+```
+
+### Cached computed value
+
+```python
+from functools import cached_property
+
+class Report:
+    def __init__(self, rows: list[int]) -> None:
+        self.rows = rows
+
+    @cached_property
+    def total(self) -> int:             # computed once, then stored on the instance
+        print("computing")
+        return sum(self.rows)
+
+r = Report([1, 2, 3])
+print(r.total, r.total)                 # -> computing / 6 6
+```
+
+## Docs
+
+- [property](https://docs.python.org/3.14/library/functions.html#property)
+- [functools.cached_property](https://docs.python.org/3.14/library/functools.html#functools.cached_property)
+- [Descriptor HowTo: properties](https://docs.python.org/3.14/howto/descriptor.html#properties)

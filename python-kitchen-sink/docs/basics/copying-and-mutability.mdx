@@ -1,0 +1,119 @@
+---
+title: Copying and mutability
+sidebar_position: 11
+---
+
+Assignment never copies; it binds another name to the same object. Lists, dicts and sets are mutable, so aliasing bugs show up in grid initialization, default arguments and backtracking. Know when you need a shallow vs deep copy.
+
+## Syntax
+
+```python
+a = [1, 2, 3]
+b = a            # alias, same object
+b.append(4)
+a                # -> [1, 2, 3, 4]
+c = a.copy()     # independent shallow copy
+```
+
+### The grid trap
+
+```python
+m, n = 3, 2
+bad = [[0] * n] * m          # m references to ONE row
+bad[0][0] = 1
+bad                          # -> [[1, 0], [1, 0], [1, 0]]
+
+good = [[0] * n for _ in range(m)]   # new row each time
+good[0][0] = 1
+good                         # -> [[1, 0], [0, 0], [0, 0]]
+# [0] * n is fine: ints are immutable
+```
+
+### Shallow copies
+
+```python
+nums = [3, 1, 2]
+c1 = nums.copy()
+c2 = nums[:]
+c3 = list(nums)
+d2 = dict(d)       # or d.copy()
+s2 = set(s)        # or s.copy()
+# Shallow: nested objects are still shared
+```
+
+### copy.copy and copy.deepcopy
+
+```python
+import copy
+
+grid = [[1, 2], [3, 4]]
+shallow = copy.copy(grid)
+deep = copy.deepcopy(grid)
+grid[0][0] = 99
+shallow[0][0]   # -> 99 (inner lists shared)
+deep[0][0]      # -> 1  (fully independent)
+
+rows = [row[:] for row in grid]   # faster 2D copy for flat rows
+```
+
+### Mutable default argument trap
+
+```python
+def bad(x, acc=[]):        # default created ONCE at def time
+    acc.append(x)
+    return acc
+
+bad(1); bad(2)             # -> [1, 2]  (shared across calls)
+
+def good(x, acc: list[int] | None = None):
+    if acc is None:
+        acc = []
+    acc.append(x)
+    return acc
+```
+
+### Lists in recursion (backtracking)
+
+```python
+def subsets(nums: list[int]) -> list[list[int]]:
+    res, path = [], []
+
+    def dfs(i: int) -> None:
+        if i == len(nums):
+            res.append(path[:])    # COPY: path keeps changing
+            return
+        path.append(nums[i])       # choose
+        dfs(i + 1)
+        path.pop()                 # un-choose
+        dfs(i + 1)
+
+    dfs(0)
+    return res
+
+subsets([1, 2])  # -> [[1, 2], [1], [2], []]
+
+# Alternative: path + [x] builds a new list per call, no pop needed,
+# but costs O(len(path)) per call
+def dfs2(i: int, path: list[int]) -> None:
+    ...
+    dfs2(i + 1, path + [nums[i]])
+```
+
+### Immutable types
+
+```python
+# Immutable: int, float, bool, str, tuple, frozenset, None
+# Mutable: list, dict, set, most user objects
+s = "abc"
+t = s
+t += "d"         # rebinds t to a new string; s is unchanged
+```
+
+## Docs
+
+- [copy module](https://docs.python.org/3.14/library/copy.html)
+- [copy.deepcopy](https://docs.python.org/3.14/library/copy.html#copy.deepcopy)
+- [Programming FAQ: how do I create a multidimensional list?](https://docs.python.org/3.14/faq/programming.html#how-do-i-create-a-multidimensional-list)
+- [Programming FAQ: why are default values shared between objects?](https://docs.python.org/3.14/faq/programming.html#why-are-default-values-shared-between-objects)
+- [Default argument values](https://docs.python.org/3.14/tutorial/controlflow.html#default-argument-values)
+- [Objects, values and types](https://docs.python.org/3.14/reference/datamodel.html#objects-values-and-types)

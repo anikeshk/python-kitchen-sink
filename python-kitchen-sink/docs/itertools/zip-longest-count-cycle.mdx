@@ -1,0 +1,90 @@
+---
+title: zip_longest, count, cycle, repeat, starmap
+sidebar_position: 6
+---
+
+`zip_longest` zips to the longest input, padding with `fillvalue`; use it for adding numbers digit by digit or merging uneven lists. `count`, `cycle` and `repeat` are infinite (or bounded) iterators for counters, round-robin and constant streams; `starmap` applies a function to argument tuples.
+
+## Syntax
+
+```python
+from itertools import zip_longest
+
+list(zip_longest([1, 2, 3], "ab", fillvalue="-"))  # -> [(1, 'a'), (2, 'b'), (3, '-')]
+```
+
+### Add digit strings (LC 415 style)
+
+```python
+from itertools import zip_longest
+
+def add_strings(a: str, b: str) -> str:
+    res, carry = [], 0
+    for x, y in zip_longest(reversed(a), reversed(b), fillvalue="0"):
+        carry, d = divmod(int(x) + int(y) + carry, 10)
+        res.append(str(d))
+    if carry:
+        res.append(str(carry))
+    return "".join(reversed(res))
+
+add_strings("999", "1")  # -> '1000'
+```
+
+### Merge strings alternately (LC 1768)
+
+```python
+from itertools import zip_longest
+
+"".join(a + b for a, b in zip_longest("abc", "pqrst", fillvalue=""))  # -> 'apbqcrst'
+```
+
+### count(start=0, step=1)
+
+```python
+from itertools import count
+
+for i in count(1):     # infinite 1, 2, 3, ...  break manually
+    if i * i > 50:
+        break
+i  # -> 8
+
+ids = count()          # unique id generator (LLD)
+next(ids), next(ids)   # -> (0, 1)
+```
+
+### cycle
+
+```python
+from itertools import cycle, islice
+
+players = cycle(["A", "B"])       # round-robin turns
+[next(players) for _ in range(5)]  # -> ['A', 'B', 'A', 'B', 'A']
+list(islice(cycle([1, 2, 3]), 7))  # -> [1, 2, 3, 1, 2, 3, 1]
+```
+
+### repeat(x, times=None)
+
+```python
+from itertools import repeat
+
+list(repeat(0, 3))            # -> [0, 0, 0]
+list(map(pow, range(4), repeat(2)))  # -> [0, 1, 4, 9]  constant argument for map
+# for a 2D grid use [[0] * n for _ in range(m)], not repeat
+```
+
+### starmap
+
+```python
+from itertools import starmap
+
+pairs = [(2, 3), (3, 2), (10, 0)]
+list(starmap(pow, pairs))     # -> [8, 9, 1]  like [pow(*p) for p in pairs]
+```
+
+## Docs
+
+- [itertools.zip_longest](https://docs.python.org/3.14/library/itertools.html#itertools.zip_longest)
+- [itertools.count](https://docs.python.org/3.14/library/itertools.html#itertools.count)
+- [itertools.cycle](https://docs.python.org/3.14/library/itertools.html#itertools.cycle)
+- [itertools.repeat](https://docs.python.org/3.14/library/itertools.html#itertools.repeat)
+- [itertools.starmap](https://docs.python.org/3.14/library/itertools.html#itertools.starmap)

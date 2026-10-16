@@ -1,0 +1,9 @@
+{
+  "label": "OOP for LLD",
+  "position": 10,
+  "link": {
+    "type": "generated-index",
+    "slug": "/oop",
+    "description": "Classes, inheritance, ABCs, protocols, dataclasses, enums, type hints."
+  }
+}

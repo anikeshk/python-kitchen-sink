@@ -1,0 +1,127 @@
+---
+title: Dataclasses
+sidebar_position: 8
+---
+
+`@dataclass` generates `__init__`, `__repr__` and `__eq__` from annotated fields, cutting LLD boilerplate for entities and value objects. Know `field(default_factory=...)`, `frozen=True` (immutable and hashable), `order=True` (sortable) and `__post_init__` for validation.
+
+## Syntax
+
+```python
+from dataclasses import dataclass, field
+
+@dataclass
+class Order:
+    id: int
+    customer: str
+    items: list[str] = field(default_factory=list)   # never items: list = []
+    total: float = 0.0
+
+o = Order(1, "ann")
+o.items.append("pen")
+print(o)            # -> Order(id=1, customer='ann', items=['pen'], total=0.0)
+print(o == Order(1, "ann", ["pen"]))                 # -> True
+```
+
+### frozen=True: immutable, hashable value object
+
+```python
+from dataclasses import dataclass, FrozenInstanceError, replace
+
+@dataclass(frozen=True)
+class Location:
+    floor: int
+    spot: int
+
+loc = Location(1, 5)
+seen = {loc}                            # hashable -> usable as dict key / set member
+try:
+    loc.spot = 6
+except FrozenInstanceError as e:
+    print(e)                            # -> cannot assign to field 'spot'
+print(replace(loc, spot=6))             # -> Location(floor=1, spot=6)  (new copy)
+```
+
+### order=True: sorting / heaps by field order
+
+```python
+from dataclasses import dataclass, field
+import heapq
+
+@dataclass(order=True)
+class Job:
+    priority: int
+    name: str = field(compare=False)    # excluded from ==, <, etc.
+
+jobs = [Job(3, "c"), Job(1, "a"), Job(2, "b")]
+heapq.heapify(jobs)
+print(heapq.heappop(jobs))              # -> Job(priority=1, name='a')
+print(Job(1, "x") == Job(1, "y"))       # -> True (name not compared)
+```
+
+### `__post_init__`: validation and derived fields
+
+```python
+from dataclasses import dataclass, field
+
+@dataclass
+class Account:
+    owner: str
+    balance: float = 0.0
+    tier: str = field(init=False)       # not an __init__ arg; set below
+
+    def __post_init__(self) -> None:
+        if self.balance < 0:
+            raise ValueError("negative balance")
+        self.tier = "gold" if self.balance >= 1000 else "basic"
+
+print(Account("ann", 5000).tier)        # -> gold
+```
+
+### slots=True and kw_only=True
+
+```python
+from dataclasses import dataclass, KW_ONLY
+
+@dataclass(slots=True, kw_only=True)    # slots: 3.10+, less memory, no new attrs
+class Vehicle:                          # kw_only: 3.10+, all fields keyword-only
+    plate: str
+    wheels: int = 4
+
+v = Vehicle(plate="KA-01")
+print(v)                                # -> Vehicle(plate='KA-01', wheels=4)
+
+@dataclass
+class Ticket:
+    id: int
+    _: KW_ONLY                          # fields after this are keyword-only
+    paid: bool = False
+
+print(Ticket(1, paid=True))             # -> Ticket(id=1, paid=True)
+```
+
+### Helpers: asdict, astuple, fields
+
+```python
+from dataclasses import dataclass, asdict, astuple, fields
+
+@dataclass
+class Item:
+    name: str
+    qty: int
+
+it = Item("pen", 2)
+print(asdict(it))                       # -> {'name': 'pen', 'qty': 2}
+print(astuple(it))                      # -> ('pen', 2)
+print([f.name for f in fields(it)])     # -> ['name', 'qty']
+```
+
+## Docs
+
+- [dataclasses module](https://docs.python.org/3.14/library/dataclasses.html)
+- [dataclasses.dataclass](https://docs.python.org/3.14/library/dataclasses.html#dataclasses.dataclass)
+- [dataclasses.field](https://docs.python.org/3.14/library/dataclasses.html#dataclasses.field)
+- [Post-init processing](https://docs.python.org/3.14/library/dataclasses.html#post-init-processing)
+- [Frozen instances](https://docs.python.org/3.14/library/dataclasses.html#frozen-instances)
+- [dataclasses.replace](https://docs.python.org/3.14/library/dataclasses.html#dataclasses.replace)
+- [dataclasses.KW_ONLY](https://docs.python.org/3.14/library/dataclasses.html#dataclasses.KW_ONLY)

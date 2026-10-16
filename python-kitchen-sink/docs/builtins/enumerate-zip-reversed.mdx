@@ -1,0 +1,67 @@
+---
+title: enumerate, zip, reversed
+sidebar_position: 3
+---
+
+Lazy iterator helpers for loops. `enumerate` gives index and value, `zip` walks sequences in parallel (and transposes matrices with `zip(*m)`), and `reversed` iterates backwards without copying.
+
+## Syntax
+
+```python
+nums = [10, 20, 30]
+for i, x in enumerate(nums):
+    print(i, x)  # 0 10, 1 20, 2 30
+```
+
+### enumerate with start
+
+```python
+list(enumerate("abc", start=1))  # -> [(1, 'a'), (2, 'b'), (3, 'c')]
+pos = {x: i for i, x in enumerate([7, 8, 9])}  # value -> index map
+```
+
+### zip
+
+```python
+names, ages = ["a", "b", "c"], [1, 2]
+list(zip(names, ages))              # -> [('a', 1), ('b', 2)], stops at shortest
+dict(zip(names, ages))              # -> {'a': 1, 'b': 2}
+# zip(names, ages, strict=True)     # ValueError: lengths differ (3.10+)
+nums = [1, 3, 6, 10]
+[b - a for a, b in zip(nums, nums[1:])]  # -> [2, 3, 4], adjacent pairs
+```
+
+### Unzip / transpose with zip(*...)
+
+```python
+pairs = [(1, "a"), (2, "b")]
+nums, chars = zip(*pairs)            # -> (1, 2), ('a', 'b')
+matrix = [[1, 2, 3], [4, 5, 6]]
+list(zip(*matrix))                   # -> [(1, 4), (2, 5), (3, 6)], transpose
+[list(row) for row in zip(*matrix)]  # transpose as list of lists
+```
+
+### Rotate a matrix
+
+```python
+m = [[1, 2], [3, 4]]
+[list(r) for r in zip(*m[::-1])]  # clockwise         -> [[3, 1], [4, 2]]
+[list(r) for r in zip(*m)][::-1]  # counter-clockwise -> [[2, 4], [1, 3]]
+```
+
+### reversed
+
+```python
+list(reversed([1, 2, 3]))     # -> [3, 2, 1], O(1) extra space while iterating
+"".join(reversed("abc"))      # -> 'cba' (or "abc"[::-1])
+for i in reversed(range(3)):  # 2, 1, 0
+    print(i)
+for i, x in reversed(list(enumerate("ab"))):  # enumerate isn't reversible
+    print(i, x)               # 1 b, 0 a
+```
+
+## Docs
+
+- [enumerate](https://docs.python.org/3.14/library/functions.html#enumerate)
+- [zip](https://docs.python.org/3.14/library/functions.html#zip)
+- [reversed](https://docs.python.org/3.14/library/functions.html#reversed)

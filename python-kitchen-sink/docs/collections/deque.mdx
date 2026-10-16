@@ -1,0 +1,108 @@
+---
+title: deque
+sidebar_position: 1
+---
+
+Double-ended queue with O(1) appends and pops at both ends. It is the BFS queue (never use `list.pop(0)`, which is O(n)), a fixed-size sliding buffer via `maxlen`, and the backbone of the monotonic-deque sliding-window trick.
+
+## Syntax
+
+```python
+from collections import deque
+
+q = deque([start])
+while q:
+    node = q.popleft()      # O(1), never list.pop(0)
+    for nei in graph[node]:
+        q.append(nei)       # O(1)
+```
+
+### Both ends
+
+```python
+from collections import deque
+d = deque([2, 3])
+d.append(4)      # right: [2, 3, 4]
+d.appendleft(1)  # left:  [1, 2, 3, 4]
+d.pop()          # -> 4
+d.popleft()      # -> 1
+d[0], d[-1]      # -> (2, 3), peek ends in O(1)
+d.extend([4, 5]); d.extendleft([0])  # extendleft reverses order of its input
+```
+
+### BFS level by level
+
+```python
+from collections import deque
+
+def bfs_levels(graph: dict[int, list[int]], start: int) -> list[list[int]]:
+    q, seen, levels = deque([start]), {start}, []
+    while q:
+        level = []
+        for _ in range(len(q)):   # snapshot current level size
+            node = q.popleft()
+            level.append(node)
+            for nei in graph[node]:
+                if nei not in seen:
+                    seen.add(nei)
+                    q.append(nei)
+        levels.append(level)
+    return levels
+
+bfs_levels({0: [1, 2], 1: [3], 2: [], 3: []}, 0)  # -> [[0], [1, 2], [3]]
+```
+
+### maxlen: bounded buffer
+
+```python
+from collections import deque
+last3 = deque(maxlen=3)
+for x in range(5):
+    last3.append(x)  # oldest falls off the left
+last3  # -> deque([2, 3, 4], maxlen=3)
+```
+
+### rotate
+
+```python
+from collections import deque
+d = deque([1, 2, 3, 4])
+d.rotate(1)   # d -> deque([4, 1, 2, 3]), right by 1, O(k)
+d.rotate(-2)  # d -> deque([2, 3, 4, 1]), left by 2
+```
+
+### Complexity caveat
+
+```python
+from collections import deque
+d = deque(range(10))
+d[5]           # O(n) in the middle (O(1) at the ends); not a random-access array
+d.insert(5, 0) # O(n)
+5 in d         # O(n)
+```
+
+### Monotonic deque: sliding window maximum
+
+```python
+from collections import deque
+
+def max_sliding_window(nums: list[int], k: int) -> list[int]:
+    dq, out = deque(), []          # indices, values decreasing
+    for i, x in enumerate(nums):
+        while dq and nums[dq[-1]] <= x:
+            dq.pop()               # smaller values can never be the max
+        dq.append(i)
+        if dq[0] <= i - k:
+            dq.popleft()           # front left the window
+        if i >= k - 1:
+            out.append(nums[dq[0]])
+    return out                     # O(n) total, each index pushed/popped once
+
+max_sliding_window([1, 3, -1, -3, 5, 3, 6, 7], 3)  # -> [3, 3, 5, 5, 6, 7]
+```
+
+## Docs
+
+- [collections.deque](https://docs.python.org/3.14/library/collections.html#collections.deque)
+- [deque recipes](https://docs.python.org/3.14/library/collections.html#deque-recipes)
+- [Using lists as queues](https://docs.python.org/3.14/tutorial/datastructures.html#using-lists-as-queues)

@@ -1,0 +1,79 @@
+---
+title: accumulate
+sidebar_position: 1
+---
+
+`itertools.accumulate` yields running totals (or running results of any binary function). Use it to build prefix-sum arrays for range-sum queries, subarray-sum problems, and running max/min in one line.
+
+## Syntax
+
+```python
+from itertools import accumulate
+
+nums = [3, 1, 4, 1, 5]
+list(accumulate(nums))  # -> [3, 4, 8, 9, 14]   O(n)
+```
+
+### Prefix array with a leading zero
+
+```python
+from itertools import accumulate
+
+nums = [3, 1, 4, 1, 5]
+prefix = list(accumulate(nums, initial=0))  # -> [0, 3, 4, 8, 9, 14]  len n+1
+# prefix[i] = sum(nums[:i])
+```
+
+### Range-sum query
+
+```python
+from itertools import accumulate
+
+nums = [3, 1, 4, 1, 5]
+prefix = list(accumulate(nums, initial=0))
+
+def range_sum(i: int, j: int) -> int:  # sum(nums[i..j]) inclusive, O(1)
+    return prefix[j + 1] - prefix[i]
+
+range_sum(1, 3)  # -> 6  (1 + 4 + 1)
+```
+
+### Running max / min with func=
+
+```python
+from itertools import accumulate
+
+nums = [3, 1, 4, 1, 5]
+list(accumulate(nums, max))  # -> [3, 3, 4, 4, 5]
+list(accumulate(nums, min))  # -> [3, 1, 1, 1, 1]
+
+# suffix max: reverse, accumulate, reverse back
+suffix_max = list(accumulate(reversed(nums), max))[::-1]  # -> [5, 5, 5, 5, 5]
+```
+
+### Prefix products
+
+```python
+from itertools import accumulate
+from operator import mul
+
+nums = [1, 2, 3, 4]
+list(accumulate(nums, mul))               # -> [1, 2, 6, 24]
+list(accumulate(nums, mul, initial=1))    # -> [1, 1, 2, 6, 24]
+```
+
+### Prefix XOR
+
+```python
+from itertools import accumulate
+from operator import xor
+
+nums = [1, 3, 4, 8]
+px = list(accumulate(nums, xor, initial=0))  # -> [0, 1, 2, 6, 14]
+# xor of nums[i..j] = px[j + 1] ^ px[i]
+```
+
+## Docs
+
+- [itertools.accumulate](https://docs.python.org/3.14/library/itertools.html#itertools.accumulate)
+- [operator module](https://docs.python.org/3.14/library/operator.html#module-operator)

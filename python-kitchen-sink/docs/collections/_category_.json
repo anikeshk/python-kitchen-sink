@@ -1,0 +1,9 @@
+{
+  "label": "collections",
+  "position": 4,
+  "link": {
+    "type": "generated-index",
+    "slug": "/collections",
+    "description": "deque, defaultdict, Counter, OrderedDict, namedtuple."
+  }
+}

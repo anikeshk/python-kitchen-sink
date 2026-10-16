@@ -1,0 +1,94 @@
+---
+title: for loop
+sidebar_position: 5
+---
+
+Iterates over any iterable: list, str, range, dict, set or generator. Use `range` for index loops, `enumerate` when you need index and value, `zip` to walk sequences in parallel, and `break`/`else` for early exit.
+
+## Syntax
+
+```python
+for x in nums:
+    print(x)
+```
+
+### Index loop with range
+
+```python
+for i in range(n):              # 0 .. n-1
+    ...
+for i in range(1, n):           # 1 .. n-1
+    ...
+for i in range(0, n, 2):        # step 2
+    ...
+for i in range(n - 1, -1, -1):  # n-1 down to 0
+    ...
+```
+
+### Index and value: enumerate
+
+```python
+for i, x in enumerate(nums):
+    ...
+for i, x in enumerate(nums, start=1):  # 1-based index
+    ...
+```
+
+### Parallel iteration: zip
+
+```python
+for a, b in zip(xs, ys):               # stops at shortest
+    ...
+for a, b in zip(xs, ys, strict=True):  # ValueError if lengths differ
+    ...
+```
+
+### Reverse iteration
+
+```python
+for x in reversed(nums):  # O(1) extra space, no copy
+    ...
+for x in nums[::-1]:      # makes a copy, O(n) space
+    ...
+```
+
+### Dict iteration
+
+```python
+for k in d:                # keys
+    ...
+for k, v in d.items():     # key-value pairs
+    ...
+for v in d.values():
+    ...
+```
+
+### 2D grid
+
+```python
+for r in range(len(grid)):
+    for c in range(len(grid[0])):
+        ...
+for r, row in enumerate(grid):
+    for c, val in enumerate(row):
+        ...
+```
+
+### for-else (else runs only if the loop didn't break)
+
+```python
+for x in nums:
+    if x == target:
+        print("found")
+        break
+else:
+    print("not found")
+```
+
+## Docs
+
+- [The for statement](https://docs.python.org/3.14/reference/compound_stmts.html#the-for-statement)
+- [range](https://docs.python.org/3.14/library/stdtypes.html#range)
+- [enumerate](https://docs.python.org/3.14/library/functions.html#enumerate)
+- [zip](https://docs.python.org/3.14/library/functions.html#zip)
+- [break and continue statements, and else clauses on loops](https://docs.python.org/3.14/tutorial/controlflow.html#break-and-continue-statements)

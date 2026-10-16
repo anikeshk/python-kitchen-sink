@@ -1,0 +1,72 @@
+---
+title: Infinity and limits
+sidebar_position: 9
+---
+
+Sentinels for min/max tracking and DP initialization. Python ints never overflow, so there is no `INT_MAX`; use `float('inf')` or `math.inf` as the "bigger than anything" value, and compare it freely with ints.
+
+## Syntax
+
+```python
+import math
+
+best = math.inf        # same as float("inf")
+for cost in [5, 3, 8]:
+    best = min(best, cost)
+best  # -> 3
+```
+
+### Positive and negative infinity
+
+```python
+import math
+float("inf"), float("-inf")  # -> (inf, -inf)
+math.inf == float("inf")     # -> True
+-math.inf < -10**100         # -> True, compares fine with any int
+math.isinf(math.inf)         # -> True
+```
+
+### DP / distance initialization
+
+```python
+import math
+n = 5
+dist = [math.inf] * n     # Dijkstra / Bellman-Ford
+dist[0] = 0
+dp = [math.inf] * (n + 1) # coin change: min coins
+ans = dp[n] if dp[n] != math.inf else -1
+```
+
+### No integer overflow
+
+```python
+2**100           # -> 1267650600228229401496703205376, exact
+10**18 + 1 > 10**18  # -> True, arbitrary precision
+# Cost: big-int ops are O(digits), not O(1)
+```
+
+### sys.maxsize
+
+```python
+import sys
+sys.maxsize      # -> 9223372036854775807 on 64-bit (2**63 - 1)
+# Max container index size, NOT the max int. OK as a sentinel if you need an int.
+```
+
+### inf gotchas
+
+```python
+import math
+math.inf - math.inf    # -> nan
+math.inf * 0           # -> nan
+# int(math.inf)        # OverflowError: inf is a float, can't convert
+type(min(3, math.inf)) # -> int, min returns the actual element
+```
+
+## Docs
+
+- [math.inf](https://docs.python.org/3.14/library/math.html#math.inf)
+- [math.isinf](https://docs.python.org/3.14/library/math.html#math.isinf)
+- [float](https://docs.python.org/3.14/library/functions.html#float)
+- [sys.maxsize](https://docs.python.org/3.14/library/sys.html#sys.maxsize)
+- [Integer types (arbitrary precision)](https://docs.python.org/3.14/library/stdtypes.html#numeric-types-int-float-complex)

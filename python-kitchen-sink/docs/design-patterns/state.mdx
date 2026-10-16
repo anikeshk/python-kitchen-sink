@@ -1,0 +1,151 @@
+---
+title: State
+sidebar_position: 6
+---
+
+An object delegates behaviour to a current state object and swaps that object on transitions, replacing big `if state == ...` blocks. Shows up in LLD rounds for vending machines, ATMs, order/booking lifecycles, elevators and traffic lights. For simple lifecycles, an `Enum` plus a transition table is shorter and easier to explain.
+
+## Syntax
+
+```python
+from abc import ABC, abstractmethod
+
+class State(ABC):
+    def insert_coin(self, vm: "VendingMachine", amount: int) -> None:
+        raise RuntimeError(f"can't insert coin in {type(self).__name__}")
+    def select(self, vm: "VendingMachine", item: str) -> None:
+        raise RuntimeError(f"can't select in {type(self).__name__}")
+    def dispense(self, vm: "VendingMachine") -> None:
+        raise RuntimeError(f"can't dispense in {type(self).__name__}")
+
+class Idle(State):
+    def insert_coin(self, vm, amount):
+        vm.balance += amount
+        vm.state = HasMoney()
+
+class HasMoney(State):
+    def insert_coin(self, vm, amount):
+        vm.balance += amount
+    def select(self, vm, item):
+        price = vm.prices[item]
+        if vm.balance < price:
+            raise ValueError("insufficient balance")
+        vm.balance -= price
+        vm.selected = item
+        vm.state = Dispensing()
+
+class Dispensing(State):
+    def dispense(self, vm):
+        print(f"dispensed {vm.selected}, change {vm.balance}")
+        vm.balance, vm.selected = 0, None
+        vm.state = Idle()
+
+class VendingMachine:
+    def __init__(self, prices: dict[str, int]) -> None:
+        self.prices = prices
+        self.balance = 0
+        self.selected: str | None = None
+        self.state: State = Idle()
+
+    # context just forwards to the current state
+    def insert_coin(self, amount: int) -> None: self.state.insert_coin(self, amount)
+    def select(self, item: str) -> None: self.state.select(self, item)
+    def dispense(self) -> None: self.state.dispense(self)
+
+vm = VendingMachine({"chips": 20})
+vm.insert_coin(25)
+vm.select("chips")
+vm.dispense()                       # -> dispensed chips, change 5
+```
+
+### Enum + transition table (order lifecycle)
+
+```python
+from enum import Enum, auto
+
+class OrderStatus(Enum):
+    PLACED = auto()
+    PAID = auto()
+    SHIPPED = auto()
+    DELIVERED = auto()
+    CANCELLED = auto()
+
+TRANSITIONS: dict[OrderStatus, set[OrderStatus]] = {
+    OrderStatus.PLACED: {OrderStatus.PAID, OrderStatus.CANCELLED},
+    OrderStatus.PAID: {OrderStatus.SHIPPED, OrderStatus.CANCELLED},
+    OrderStatus.SHIPPED: {OrderStatus.DELIVERED},
+    OrderStatus.DELIVERED: set(),
+    OrderStatus.CANCELLED: set(),
+}
+
+class Order:
+    def __init__(self) -> None:
+        self.status = OrderStatus.PLACED
+        self.history = [self.status]
+
+    def transition(self, new: OrderStatus) -> None:
+        if new not in TRANSITIONS[self.status]:            # O(1) check
+            raise ValueError(f"{self.status.name} -> {new.name} not allowed")
+        self.status = new
+        self.history.append(new)
+
+o = Order()
+o.transition(OrderStatus.PAID)
+o.transition(OrderStatus.SHIPPED)
+try:
+    o.transition(OrderStatus.CANCELLED)
+except ValueError as e:
+    print(e)                        # -> SHIPPED -> CANCELLED not allowed
+```
+
+### Event-driven table: (state, event) -> next state
+
+```python
+from enum import StrEnum             # 3.11+
+
+class Light(StrEnum):
+    RED = "red"
+    GREEN = "green"
+    YELLOW = "yellow"
+
+NEXT: dict[tuple[Light, str], Light] = {
+    (Light.RED, "timer"): Light.GREEN,
+    (Light.GREEN, "timer"): Light.YELLOW,
+    (Light.YELLOW, "timer"): Light.RED,
+    (Light.GREEN, "emergency"): Light.RED,
+}
+
+state = Light.RED
+for event in ["timer", "timer", "timer"]:
+    state = NEXT[(state, event)]
+print(state)                         # -> red
+```
+
+### match on state (small machines)
+
+```python
+from enum import Enum
+
+class Door(Enum):
+    OPEN = "open"
+    CLOSED = "closed"
+    LOCKED = "locked"
+
+def handle(state: Door, action: str) -> Door:
+    match state, action:             # 3.10+ structural pattern matching
+        case Door.CLOSED, "open": return Door.OPEN
+        case Door.OPEN, "close": return Door.CLOSED
+        case Door.CLOSED, "lock": return Door.LOCKED
+        case Door.LOCKED, "unlock": return Door.CLOSED
+        case _: raise ValueError(f"{action} invalid in {state.name}")
+
+handle(Door.CLOSED, "lock")          # -> Door.LOCKED
+```
+
+## Docs
+
+- [abc.ABC](https://docs.python.org/3.14/library/abc.html#abc.ABC)
+- [enum.Enum](https://docs.python.org/3.14/library/enum.html#enum.Enum)
+- [enum.auto](https://docs.python.org/3.14/library/enum.html#enum.auto)
+- [enum.StrEnum](https://docs.python.org/3.14/library/enum.html#enum.StrEnum)
+- [The match statement](https://docs.python.org/3.14/reference/compound_stmts.html#the-match-statement)

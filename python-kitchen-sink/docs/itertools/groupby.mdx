@@ -1,0 +1,81 @@
+---
+title: groupby
+sidebar_position: 3
+---
+
+`itertools.groupby` groups **consecutive** equal elements (by an optional key). Use it for run-length encoding, counting runs of the same char, and grouping records after sorting by the same key.
+
+## Syntax
+
+```python
+from itertools import groupby
+
+s = "aaabccdd"
+[(k, len(list(g))) for k, g in groupby(s)]  # -> [('a', 3), ('b', 1), ('c', 2), ('d', 2)]  O(n)
+```
+
+### Only consecutive runs are grouped
+
+```python
+from itertools import groupby
+
+s = "aabaa"
+[k for k, _ in groupby(s)]          # -> ['a', 'b', 'a']   'a' appears twice
+[k for k, _ in groupby(sorted(s))]  # -> ['a', 'b']        sort first for true grouping
+```
+
+### Run-length encoding
+
+```python
+from itertools import groupby
+
+def rle(s: str) -> str:
+    return "".join(f"{len(list(g))}{k}" for k, g in groupby(s))
+
+rle("aaabccdd")  # -> '3a1b2c2d'
+```
+
+### Longest run
+
+```python
+from itertools import groupby
+
+bits = [1, 1, 0, 1, 1, 1, 0]
+max((len(list(g)) for k, g in groupby(bits) if k == 1), default=0)  # -> 3
+```
+
+### key= (sort by the same key first)
+
+```python
+from itertools import groupby
+
+words = ["apple", "bob", "avocado", "banana", "cat"]
+words.sort(key=lambda w: w[0])  # O(n log n)
+{k: list(g) for k, g in groupby(words, key=lambda w: w[0])}
+# -> {'a': ['apple', 'avocado'], 'b': ['bob', 'banana'], 'c': ['cat']}
+```
+
+### Consume each group before advancing
+
+```python
+from itertools import groupby
+
+groups = [(k, g) for k, g in groupby("aabb")]
+[list(g) for _, g in groups]  # -> [[], []]  groups are exhausted; materialize with list(g) inside the loop
+```
+
+### Alternative when order doesn't matter
+
+```python
+from collections import Counter, defaultdict
+
+Counter("aabaa")            # total counts, no sorting, O(n)
+by_first = defaultdict(list)
+for w in ["apple", "bob", "avocado"]:
+    by_first[w[0]].append(w)
+```
+
+## Docs
+
+- [itertools.groupby](https://docs.python.org/3.14/library/itertools.html#itertools.groupby)
+- [collections.Counter](https://docs.python.org/3.14/library/collections.html#collections.Counter)

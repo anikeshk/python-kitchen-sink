@@ -1,0 +1,75 @@
+---
+title: pairwise and batched
+sidebar_position: 4
+---
+
+`pairwise` (3.10+) yields overlapping adjacent pairs; use it for adjacent differences, checking sortedness, or merging intervals. `batched` (3.12+) splits an iterable into fixed-size tuples; use it for chunking.
+
+## Syntax
+
+```python
+from itertools import batched, pairwise
+
+list(pairwise([1, 4, 9, 16]))     # -> [(1, 4), (4, 9), (9, 16)]
+list(batched("abcdefg", 3))       # -> [('a', 'b', 'c'), ('d', 'e', 'f'), ('g',)]
+```
+
+### Adjacent differences
+
+```python
+from itertools import pairwise  # 3.10+
+
+nums = [1, 4, 9, 16]
+[b - a for a, b in pairwise(nums)]  # -> [3, 5, 7]
+```
+
+### Is sorted / strictly increasing
+
+```python
+from itertools import pairwise
+
+nums = [1, 2, 2, 5]
+all(a <= b for a, b in pairwise(nums))  # -> True   O(n), no copy
+all(a < b for a, b in pairwise(nums))   # -> False
+```
+
+### Sum of positive deltas
+
+```python
+from itertools import pairwise
+
+prices = [7, 1, 5, 3, 6, 4]
+sum(max(0, b - a) for a, b in pairwise(prices))  # -> 7  (LC 122, sum of all gains)
+```
+
+### Chunking with batched
+
+```python
+from itertools import batched  # 3.12+
+
+list(batched(range(7), 3))   # -> [(0, 1, 2), (3, 4, 5), (6,)]  last batch may be short
+# string into rows of width w
+["".join(row) for row in batched("abcdef", 2)]  # -> ['ab', 'cd', 'ef']
+```
+
+### batched(strict=True)
+
+```python
+from itertools import batched
+
+list(batched(range(6), 3, strict=True))  # 3.13+ -> [(0, 1, 2), (3, 4, 5)]
+# list(batched(range(7), 3, strict=True))  # ValueError: incomplete batch
+```
+
+### Pre-3.10 / slicing equivalents
+
+```python
+nums = [1, 4, 9, 16]
+list(zip(nums, nums[1:]))                     # same as pairwise, but copies
+[nums[i:i + 3] for i in range(0, len(nums), 3)]  # same as batched, gives lists
+```
+
+## Docs
+
+- [itertools.pairwise](https://docs.python.org/3.14/library/itertools.html#itertools.pairwise)
+- [itertools.batched](https://docs.python.org/3.14/library/itertools.html#itertools.batched)

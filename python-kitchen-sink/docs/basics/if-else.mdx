@@ -1,0 +1,76 @@
+---
+title: if / elif / else
+sidebar_position: 3
+---
+
+Conditional branching. Python has no `switch` (see `match`) and no braces; indentation defines blocks. Lean on truthiness for empty checks, but use `x is None` when `0` or `""` are valid values.
+
+## Syntax
+
+```python
+if x > 0:
+    ...
+elif x == 0:
+    ...
+else:
+    ...
+```
+
+### Truthiness rules
+
+```python
+# Falsy: None, False, 0, 0.0, "", [], (), {}, set(), range(0)
+# Everything else is truthy (including "0", [0], " ")
+bool([])      # -> False
+bool([0])     # -> True
+bool("0")     # -> True
+```
+
+### Empty checks with `not`
+
+```python
+if not nums:          # empty list
+    print("empty")
+if not s:             # empty string
+    print("empty")
+while stack:          # until empty
+    stack.pop()
+```
+
+### None checks: `is None`
+
+```python
+if node is None:      # explicit; use when 0 / "" are valid
+    ...
+if root is not None:
+    ...
+# Pitfall: `if not val:` is also True for val == 0
+```
+
+### Combining conditions
+
+```python
+if 0 <= r < rows and 0 <= c < cols and grid[r][c] == 1:
+    ...                         # short-circuits: bounds check first
+if x in {"a", "e", "i", "o", "u"}:
+    ...
+if any(x < 0 for x in nums):
+    ...
+if all(x > 0 for x in nums):
+    ...
+```
+
+### One-liners
+
+```python
+val = a if cond else b        # conditional expression
+if not root: print("empty")   # legal, but avoid in production code
+```
+
+## Docs
+
+- [The if statement](https://docs.python.org/3.14/reference/compound_stmts.html#the-if-statement)
+- [Truth value testing](https://docs.python.org/3.14/library/stdtypes.html#truth-value-testing)
+- [Boolean operations](https://docs.python.org/3.14/reference/expressions.html#boolean-operations)
+- [any()](https://docs.python.org/3.14/library/functions.html#any)
+- [all()](https://docs.python.org/3.14/library/functions.html#all)

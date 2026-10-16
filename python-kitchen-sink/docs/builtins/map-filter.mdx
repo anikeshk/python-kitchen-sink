@@ -1,0 +1,54 @@
+---
+title: map and filter
+sidebar_position: 4
+---
+
+`map` applies a function to every item; `filter` keeps items where a predicate is truthy. Both return lazy iterators. In interviews they are mostly used for parsing input (`map(int, ...)`); for anything with a lambda, a comprehension is usually clearer.
+
+## Syntax
+
+```python
+s = "3 1 4"
+nums = list(map(int, s.split()))  # -> [3, 1, 4]
+```
+
+### map
+
+```python
+list(map(str, [1, 2, 3]))             # -> ['1', '2', '3']
+list(map(len, ["a", "bb"]))           # -> [1, 2]
+list(map(lambda x: x * x, [1, 2, 3])) # -> [1, 4, 9]
+list(map(max, [1, 5], [4, 2]))        # -> [4, 5], multiple iterables
+a, b = map(int, "3 4".split())        # unpack parsed input
+```
+
+### filter
+
+```python
+list(filter(lambda x: x % 2 == 0, range(6)))  # -> [0, 2, 4]
+list(filter(None, [0, 1, "", "a", None]))     # -> [1, 'a'], drop falsy
+list(filter(str.isalnum, "a,b c!"))           # -> ['a', 'b', 'c']
+```
+
+### Prefer comprehensions
+
+```python
+nums = [1, 2, 3, 4]
+[x * x for x in nums]               # same as map(lambda x: x * x, nums)
+[x for x in nums if x % 2 == 0]     # same as filter(lambda x: x % 2 == 0, nums)
+[x * x for x in nums if x % 2 == 0] # map + filter in one
+```
+
+### Lazy: consumed once
+
+```python
+m = map(int, ["1", "2"])
+list(m)  # -> [1, 2]
+list(m)  # -> [], iterator exhausted
+```
+
+## Docs
+
+- [map](https://docs.python.org/3.14/library/functions.html#map)
+- [filter](https://docs.python.org/3.14/library/functions.html#filter)
+- [List comprehensions](https://docs.python.org/3.14/tutorial/datastructures.html#list-comprehensions)

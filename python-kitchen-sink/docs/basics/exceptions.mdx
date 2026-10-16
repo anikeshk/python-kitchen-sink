@@ -1,0 +1,123 @@
+---
+title: Exceptions
+sidebar_position: 10
+---
+
+Raise and handle errors with `try`/`except`. In LLD interviews, define custom exception classes and raise them for invalid state; in DSA, `try` is rare but useful for parsing input or catching `KeyError`/`IndexError`.
+
+## Syntax
+
+```python
+try:
+    x = int(s)
+except ValueError:
+    x = 0
+```
+
+### else and finally
+
+```python
+try:
+    f = open(path)
+except OSError as e:
+    print("failed:", e)
+else:
+    data = f.read()     # runs only if no exception
+    f.close()
+finally:
+    print("always runs")
+```
+
+### Multiple excepts
+
+```python
+try:
+    v = d[key] / count
+except KeyError:
+    v = None
+except ZeroDivisionError:
+    v = 0
+except (TypeError, ValueError) as e:  # tuple: any of these
+    raise
+except Exception as e:                # catch-all last; avoid bare `except:`
+    print(type(e).__name__, e)
+```
+
+### Without parentheses (3.14+)
+
+```python
+try:
+    v = int(s)
+except ValueError, TypeError:   # 3.14+ (PEP 758), only without `as`
+    v = 0
+```
+
+### raise
+
+```python
+def withdraw(balance: int, amount: int) -> int:
+    if amount > balance:
+        raise ValueError(f"insufficient funds: {balance} < {amount}")
+    return balance - amount
+
+try:
+    ...
+except KeyError:
+    raise              # re-raise the current exception
+```
+
+### Custom exceptions
+
+```python
+class ParkingLotFullError(Exception):
+    pass
+
+class InvalidMoveError(ValueError):
+    def __init__(self, move: str):
+        super().__init__(f"invalid move: {move}")
+        self.move = move
+```
+
+### raise ... from (chaining)
+
+```python
+class ConfigError(Exception): ...
+
+def load(cfg: dict, key: str) -> str:
+    try:
+        return cfg[key]
+    except KeyError as e:
+        raise ConfigError(f"missing {key}") from e   # sets __cause__
+
+# raise X from None  -> suppress the original context
+```
+
+### except* (exception groups, 3.11+)
+
+```python
+try:
+    raise ExceptionGroup("batch", [ValueError("a"), TypeError("b")])
+except* ValueError as eg:
+    print("values:", eg.exceptions)
+except* TypeError as eg:
+    print("types:", eg.exceptions)
+# Mostly for concurrent code (asyncio.TaskGroup); rare in interviews
+```
+
+### Common built-in exceptions
+
+```python
+# ValueError, TypeError, KeyError, IndexError, ZeroDivisionError,
+# AttributeError, StopIteration, RecursionError, NotImplementedError
+```
+
+## Docs
+
+- [Errors and exceptions (tutorial)](https://docs.python.org/3.14/tutorial/errors.html)
+- [The try statement](https://docs.python.org/3.14/reference/compound_stmts.html#the-try-statement)
+- [The raise statement](https://docs.python.org/3.14/reference/simple_stmts.html#the-raise-statement)
+- [Exception chaining](https://docs.python.org/3.14/tutorial/errors.html#exception-chaining)
+- [User-defined exceptions](https://docs.python.org/3.14/tutorial/errors.html#user-defined-exceptions)
+- [except* clause](https://docs.python.org/3.14/reference/compound_stmts.html#except-star)
+- [Built-in exception hierarchy](https://docs.python.org/3.14/library/exceptions.html#exception-hierarchy)
+- [What's New in 3.14: PEP 758](https://docs.python.org/3.14/whatsnew/3.14.html#pep-758-allow-except-and-except-expressions-without-brackets)

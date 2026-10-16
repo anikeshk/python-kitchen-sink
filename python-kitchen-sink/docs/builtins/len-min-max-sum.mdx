@@ -1,0 +1,68 @@
+---
+title: len, min, max, sum
+sidebar_position: 1
+---
+
+The everyday aggregates. `len` is O(1) on built-in containers; `min`, `max` and `sum` are O(n) single passes. Use `key=` to compare by a derived value and `default=` to avoid a `ValueError` on empty input.
+
+## Syntax
+
+```python
+nums = [3, 1, 4, 1, 5]
+len(nums)  # -> 5, O(1)
+min(nums)  # -> 1, O(n)
+max(nums)  # -> 5, O(n)
+sum(nums)  # -> 14, O(n)
+```
+
+### Multiple args vs one iterable
+
+```python
+max(3, 7)        # -> 7, two or more positional args
+max([3, 7])      # -> 7, a single iterable
+min(a, b, c)     # handy for DP: dp[i] = min(dp[i - 1], dp[i - 2]) + cost[i]
+```
+
+### key=
+
+```python
+words = ["apple", "fig", "banana"]
+max(words, key=len)                 # -> 'banana'
+min(words, key=len)                 # -> 'fig'
+pairs = [(1, "b"), (3, "a"), (2, "c")]
+max(pairs, key=lambda p: p[1])      # -> (2, 'c')
+counts = {"a": 3, "b": 5}
+max(counts, key=counts.get)         # -> 'b' (key with largest value)
+```
+
+### default= for empty iterables
+
+```python
+max([], default=0)                     # -> 0 (max([]) raises ValueError)
+min((x for x in [1, 2] if x > 5), default=-1)  # -> -1
+```
+
+### Argmax / argmin
+
+```python
+nums = [3, 1, 4, 1, 5]
+max(range(len(nums)), key=nums.__getitem__)  # -> 4, index of the max
+min(range(len(nums)), key=nums.__getitem__)  # -> 1, first index of the min
+i, v = max(enumerate(nums), key=lambda p: p[1])  # -> (4, 5)
+```
+
+### sum with start
+
+```python
+sum([1, 2, 3], 10)            # -> 16, start=10
+sum([[1], [2, 3]], [])        # -> [1, 2, 3], but O(n^2); prefer itertools.chain
+sum(x * x for x in range(4))  # -> 14, generator, no list built
+sum(c == "a" for c in "banana")  # -> 3, bools count as 0/1
+```
+
+## Docs
+
+- [len](https://docs.python.org/3.14/library/functions.html#len)
+- [min](https://docs.python.org/3.14/library/functions.html#min)
+- [max](https://docs.python.org/3.14/library/functions.html#max)
+- [sum](https://docs.python.org/3.14/library/functions.html#sum)

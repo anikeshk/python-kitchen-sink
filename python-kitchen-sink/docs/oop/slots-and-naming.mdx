@@ -1,0 +1,110 @@
+---
+title: __slots__ and naming conventions
+sidebar_position: 11
+---
+
+`__slots__` replaces the per-instance `__dict__` with fixed storage: less memory, faster access, and no accidental new attributes. Leading underscores signal visibility: `_x` is "internal by convention", `__x` triggers name mangling to avoid clashes in subclasses.
+
+## Syntax
+
+```python
+class Point:
+    __slots__ = ("x", "y")
+
+    def __init__(self, x: int, y: int) -> None:
+        self.x, self.y = x, y
+
+p = Point(1, 2)
+try:
+    p.z = 3
+except AttributeError as e:
+    print(e)                    # -> 'Point' object has no attribute 'z' and no __dict__ for setting new attributes
+print(hasattr(p, "__dict__"))   # -> False
+```
+
+### Memory: with vs without slots
+
+```python
+import sys
+
+class Plain:
+    def __init__(self) -> None:
+        self.a, self.b = 1, 2
+
+class Slotted:
+    __slots__ = ("a", "b")
+    def __init__(self) -> None:
+        self.a, self.b = 1, 2
+
+p, s = Plain(), Slotted()
+print(sys.getsizeof(p) + sys.getsizeof(p.__dict__), sys.getsizeof(s))
+# slotted is noticeably smaller; matters when creating millions of objects
+```
+
+### Slots with inheritance and dataclasses
+
+```python
+from dataclasses import dataclass
+
+class Vehicle:
+    __slots__ = ("plate",)
+
+class Car(Vehicle):
+    __slots__ = ("seats",)      # declare only the NEW attrs; omit -> subclass gets __dict__
+
+@dataclass(slots=True)          # 3.10+: easiest way to get slots
+class Cell:
+    r: int
+    c: int
+```
+
+### `_protected`: convention only
+
+```python
+class Account:
+    def __init__(self) -> None:
+        self._balance = 0       # "internal, don't touch" - still accessible
+
+acc = Account()
+print(acc._balance)             # -> 0 (works; linters may warn)
+# `from module import *` skips names starting with _
+```
+
+### `__private`: name mangling
+
+```python
+class Account:
+    def __init__(self) -> None:
+        self.__pin = 1234       # stored as _Account__pin
+
+acc = Account()
+try:
+    acc.__pin
+except AttributeError:
+    print("no __pin")           # -> no __pin
+print(acc._Account__pin)        # -> 1234 (mangled, not truly private)
+
+class Savings(Account):
+    def __init__(self) -> None:
+        super().__init__()
+        self.__pin = 0          # becomes _Savings__pin: no clash with parent's
+print(vars(Savings()))          # -> {'_Account__pin': 1234, '_Savings__pin': 0}
+```
+
+### Cheat sheet
+
+```python
+# name      meaning                                   mangled?
+# x         public                                    no
+# _x        internal by convention                    no
+# __x       class-private, avoids subclass clashes    yes -> _ClassName__x
+# __x__     reserved for Python (dunders)             no; don't invent your own
+# x_        avoid clashing with a keyword (class_)    no
+```
+
+## Docs
+
+- [__slots__](https://docs.python.org/3.14/reference/datamodel.html#slots)
+- [Private variables (tutorial)](https://docs.python.org/3.14/tutorial/classes.html#private-variables)
+- [Name mangling](https://docs.python.org/3.14/reference/expressions.html#private-name-mangling)
+- [Reserved classes of identifiers](https://docs.python.org/3.14/reference/lexical_analysis.html#reserved-classes-of-identifiers)

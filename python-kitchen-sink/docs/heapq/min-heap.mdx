@@ -1,0 +1,99 @@
+---
+title: Min-heap basics
+sidebar_position: 1
+---
+
+`heapq` turns a plain list into a binary min-heap: smallest item at `heap[0]`, push/pop in O(log n). Use it for top-k, k-way merge, scheduling, Dijkstra, and "running median" style problems.
+
+## Syntax
+
+```python
+import heapq
+
+heap = []
+heapq.heappush(heap, 5)   # O(log n)
+heapq.heappush(heap, 1)
+heapq.heappush(heap, 3)
+heap[0]                   # -> 1, peek min, O(1)
+heapq.heappop(heap)       # -> 1, O(log n)
+```
+
+### heapify an existing list
+
+```python
+import heapq
+nums = [5, 3, 8, 1]
+heapq.heapify(nums)   # in place, O(n) (faster than n pushes)
+nums[0]               # -> 1
+# nums is heap-ordered, NOT sorted: don't index past [0]
+```
+
+### Pop all in order
+
+```python
+import heapq
+h = [5, 3, 8, 1]
+heapq.heapify(h)
+[heapq.heappop(h) for _ in range(len(h))]  # -> [1, 3, 5, 8], heapsort O(n log n)
+```
+
+### heappushpop vs heapreplace
+
+```python
+import heapq
+h = [2, 4, 6]
+heapq.heappushpop(h, 1)  # -> 1, push THEN pop; returns 1 since it's smallest
+heapq.heapreplace(h, 9)  # -> 2, pop THEN push; h -> [4, 9, 6]
+# Both O(log n), faster than separate push + pop
+```
+
+### Top-k largest: size-k min-heap
+
+```python
+import heapq
+
+def k_largest(nums: list[int], k: int) -> list[int]:
+    heap: list[int] = []
+    for x in nums:                    # O(n log k) time, O(k) space
+        if len(heap) < k:
+            heapq.heappush(heap, x)
+        elif x > heap[0]:
+            heapq.heapreplace(heap, x)  # drop current k-th largest
+    return heap                        # heap[0] is the k-th largest
+
+k_largest([3, 2, 1, 5, 6, 4], 2)  # -> [5, 6], kth largest = 5 (LeetCode 215)
+```
+
+### Top-k smallest: size-k max-heap
+
+```python
+import heapq
+
+def k_smallest(nums: list[int], k: int) -> list[int]:
+    heap: list[int] = []
+    for x in nums:
+        heapq.heappush_max(heap, x)      # 3.14+, else push -x
+        if len(heap) > k:
+            heapq.heappop_max(heap)      # drop the largest
+    return sorted(heap)
+
+k_smallest([7, 2, 9, 1, 5], 3)  # -> [1, 2, 5]
+```
+
+### Complexity
+
+```python
+# heappush / heappop / heappushpop / heapreplace: O(log n)
+# heap[0] peek: O(1)
+# heapify: O(n)
+# x in heap / removing an arbitrary item: O(n)  -> use lazy deletion instead
+```
+
+## Docs
+
+- [heapq module](https://docs.python.org/3.14/library/heapq.html)
+- [heapq.heappush](https://docs.python.org/3.14/library/heapq.html#heapq.heappush)
+- [heapq.heappop](https://docs.python.org/3.14/library/heapq.html#heapq.heappop)
+- [heapq.heapify](https://docs.python.org/3.14/library/heapq.html#heapq.heapify)
+- [heapq.heappushpop](https://docs.python.org/3.14/library/heapq.html#heapq.heappushpop)
+- [heapq.heapreplace](https://docs.python.org/3.14/library/heapq.html#heapq.heapreplace)

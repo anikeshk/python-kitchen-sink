@@ -1,0 +1,83 @@
+---
+title: Type conversions and bits
+sidebar_position: 7
+---
+
+Converting between strings, numbers and bases. `int(s, 2)` and `format(x, 'b')` cover most bit-manipulation I/O, and `int.bit_count()` counts set bits without string tricks.
+
+## Syntax
+
+```python
+int("42")       # -> 42
+str(42)         # -> '42'
+float("3.5")    # -> 3.5
+list("abc")     # -> ['a', 'b', 'c']
+```
+
+### int from strings and bases
+
+```python
+int("  -7 ")      # -> -7, whitespace stripped
+int("1010", 2)    # -> 10
+int("ff", 16)     # -> 255
+int("0b101", 0)   # -> 5, base 0 reads the prefix
+int(3.9)          # -> 3, truncates toward 0
+int(-3.9)         # -> -3
+```
+
+### To binary / hex / octal strings
+
+```python
+bin(10)              # -> '0b1010'
+hex(255)             # -> '0xff'
+oct(8)               # -> '0o10'
+format(10, "b")      # -> '1010', no prefix
+format(5, "08b")     # -> '00000101', zero-padded
+f"{255:x}"           # -> 'ff'
+bin(-5)              # -> '-0b101'
+```
+
+### Bit helpers
+
+```python
+(13).bit_count()     # -> 3, popcount of 0b1101 (3.10+)
+(13).bit_length()    # -> 4, bits needed
+(0).bit_length()     # -> 0
+n = 12
+n & (n - 1)          # -> 8, drop lowest set bit
+n & -n               # -> 4, isolate lowest set bit
+```
+
+### bool and truthiness
+
+```python
+bool(0), bool(""), bool([]), bool(None)  # -> all False
+bool("0"), bool([0])                     # -> True, True
+int(True)                                # -> 1
+```
+
+### Characters and collections
+
+```python
+ord("a"), chr(97)          # -> 97, 'a'
+ord("c") - ord("a")        # -> 2, letter index
+list("abc")                # -> ['a', 'b', 'c']
+set("aab")                 # -> {'a', 'b'}
+tuple([1, 2])              # -> (1, 2), hashable, usable as dict key
+"".join(["a", "b"])        # -> 'ab'
+"".join(map(str, [1, 2]))  # -> '12'
+```
+
+## Docs
+
+- [int](https://docs.python.org/3.14/library/functions.html#int)
+- [int.bit_count](https://docs.python.org/3.14/library/stdtypes.html#int.bit_count)
+- [int.bit_length](https://docs.python.org/3.14/library/stdtypes.html#int.bit_length)
+- [bin](https://docs.python.org/3.14/library/functions.html#bin)
+- [hex](https://docs.python.org/3.14/library/functions.html#hex)
+- [oct](https://docs.python.org/3.14/library/functions.html#oct)
+- [format](https://docs.python.org/3.14/library/functions.html#format)
+- [Format specification mini-language](https://docs.python.org/3.14/library/string.html#format-specification-mini-language)
+- [Truth value testing](https://docs.python.org/3.14/library/stdtypes.html#truth-value-testing)
+- [ord](https://docs.python.org/3.14/library/functions.html#ord)
+- [chr](https://docs.python.org/3.14/library/functions.html#chr)

@@ -1,0 +1,9 @@
+{
+  "label": "LLD design patterns",
+  "position": 12,
+  "link": {
+    "type": "generated-index",
+    "slug": "/design-patterns",
+    "description": "Common GoF patterns written idiomatically in Python."
+  }
+}

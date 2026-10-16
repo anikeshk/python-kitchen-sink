@@ -1,0 +1,85 @@
+---
+title: Variables and types
+sidebar_position: 1
+---
+
+Python is dynamically typed: names bind to objects, and the type lives on the object. The core built-ins are `int` (arbitrary precision, so no overflow), `float`, `bool`, `str` and `None`. Know the conversions for parsing input and `float('inf')` for min/max sentinels.
+
+## Syntax
+
+```python
+n = 42           # int
+x = 3.14         # float
+ok = True        # bool (subclass of int)
+s = "hello"      # str
+res = None       # NoneType
+```
+
+### int: arbitrary precision
+
+```python
+big = 2 ** 100        # no overflow -> 1267650600228229401496703205376
+1_000_000             # underscores for readability
+0b1010, 0o17, 0xFF    # -> (10, 15, 255)
+MOD = 10**9 + 7       # common LeetCode modulus
+```
+
+### float and infinity
+
+```python
+best = float('inf')    # sentinel for min
+worst = float('-inf')  # sentinel for max
+0.1 + 0.2 == 0.3       # -> False (binary floating point)
+import math
+math.isclose(0.1 + 0.2, 0.3)  # -> True
+math.inf                      # same as float('inf')
+```
+
+### bool is an int
+
+```python
+True + True        # -> 2
+sum([True, False, True])  # -> 2, count matches
+int(True)          # -> 1
+```
+
+### type() and isinstance()
+
+```python
+type(5)                    # -> <class 'int'>
+type(5) is int             # -> True
+isinstance(5, int)         # -> True (prefer: respects subclasses)
+isinstance(True, int)      # -> True (bool subclasses int)
+isinstance(5, int | float) # union types, 3.10+
+```
+
+### Conversions
+
+```python
+int("42")        # -> 42
+int("-7")        # -> -7
+int("ff", 16)    # -> 255
+int("1010", 2)   # -> 10
+int(3.9)         # -> 3 (truncates toward zero)
+int(-3.9)        # -> -3
+float("2.5")     # -> 2.5
+str(42)          # -> '42'
+bool(0), bool("")  # -> (False, False)
+```
+
+### Multiple assignment
+
+```python
+a = b = 0        # both bind to the same object
+x, y = 1, 2
+```
+
+## Docs
+
+- [Built-in types: numeric types](https://docs.python.org/3.14/library/stdtypes.html#numeric-types-int-float-complex)
+- [Boolean type](https://docs.python.org/3.14/library/stdtypes.html#boolean-type-bool)
+- [type()](https://docs.python.org/3.14/library/functions.html#type)
+- [isinstance()](https://docs.python.org/3.14/library/functions.html#isinstance)
+- [int()](https://docs.python.org/3.14/library/functions.html#int)
+- [float()](https://docs.python.org/3.14/library/functions.html#float)
+- [math.isclose](https://docs.python.org/3.14/library/math.html#math.isclose)

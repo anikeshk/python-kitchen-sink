@@ -1,0 +1,80 @@
+---
+title: sorted and list.sort
+sidebar_position: 2
+---
+
+`sorted(iterable)` returns a new list; `list.sort()` sorts in place and returns `None`. Both are Timsort: O(n log n), stable, and take `key=` and `reverse=`. Sorting first is the setup step for two pointers, greedy intervals and binary search.
+
+## Syntax
+
+```python
+nums = [3, 1, 2]
+new = sorted(nums)   # -> [1, 2, 3], nums unchanged, O(n log n) time, O(n) space
+nums.sort()          # in place, nums -> [1, 2, 3]
+```
+
+### sort() returns None
+
+```python
+nums = [3, 1, 2]
+result = nums.sort()  # result is None: classic bug
+nums = sorted(nums)   # use sorted() when you need the value
+```
+
+### reverse=
+
+```python
+sorted([3, 1, 2], reverse=True)  # -> [3, 2, 1]
+```
+
+### key=
+
+```python
+words = ["banana", "fig", "apple"]
+sorted(words, key=len)           # -> ['fig', 'apple', 'banana']
+sorted(words, key=str.lower)     # case-insensitive
+intervals = [[5, 6], [1, 3], [2, 4]]
+intervals.sort(key=lambda iv: iv[0])  # by start -> [[1, 3], [2, 4], [5, 6]]
+```
+
+### Multi-key with tuples
+
+```python
+counts = [("a", 2), ("c", 3), ("b", 3)]
+# count descending, then name ascending
+sorted(counts, key=lambda x: (-x[1], x[0]))  # -> [('b', 3), ('c', 3), ('a', 2)]
+words = ["bb", "a", "ccc", "ab"]
+sorted(words, key=lambda w: (len(w), w))     # -> ['a', 'ab', 'bb', 'ccc']
+```
+
+### Stability (equal keys keep original order)
+
+```python
+people = [("bob", 25), ("amy", 30), ("cal", 25)]
+sorted(people, key=lambda p: p[1])
+# -> [('bob', 25), ('cal', 25), ('amy', 30)], bob still before cal
+```
+
+### Sort chars of a string
+
+```python
+"".join(sorted("dcba"))  # -> 'abcd', anagram key
+```
+
+### Custom comparator: cmp_to_key
+
+```python
+from functools import cmp_to_key
+
+# Largest Number (LeetCode 179): order so concatenation is maximal
+nums = [3, 30, 34, 5, 9]
+strs = sorted(map(str, nums), key=cmp_to_key(lambda a, b: -1 if a + b > b + a else 1))
+"".join(strs)  # -> '9534330'
+```
+
+## Docs
+
+- [sorted](https://docs.python.org/3.14/library/functions.html#sorted)
+- [list.sort](https://docs.python.org/3.14/library/stdtypes.html#list.sort)
+- [Sorting Techniques HOWTO](https://docs.python.org/3.14/howto/sorting.html)
+- [functools.cmp_to_key](https://docs.python.org/3.14/library/functools.html#functools.cmp_to_key)

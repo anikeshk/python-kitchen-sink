@@ -1,0 +1,92 @@
+---
+title: String formatting
+sidebar_position: 6
+---
+
+f-strings are the default way to format output: readable, fast, and they support the full format-spec mini-language for width, padding, precision and binary. Use the `=` specifier for quick debug prints during an interview.
+
+## Syntax
+
+```python
+name, n = "Ada", 3
+f"{name} has {n} items"        # -> 'Ada has 3 items'
+f"{n * 2}"                     # any expression -> '6'
+f"{name!r}"                    # repr -> "'Ada'"
+```
+
+### Debug specifier `=`
+
+```python
+x, nums = 5, [1, 2]
+f"{x=}"            # -> 'x=5'
+f"{len(nums)=}"    # -> 'len(nums)=2'
+f"{x = }"          # -> 'x = 5', spaces preserved
+```
+
+### Width, alignment, padding
+
+```python
+f"{'hi':>5}"       # -> '   hi'  right
+f"{'hi':<5}|"      # -> 'hi   |' left
+f"{'hi':^6}"       # -> '  hi  ' center
+f"{'hi':*^6}"      # -> '**hi**' custom fill
+f"{42:5d}"         # -> '   42'
+f"{42:05d}"        # -> '00042'  zero-pad
+```
+
+### Numbers
+
+```python
+f"{3.14159:.2f}"     # -> '3.14'
+f"{1234567:,}"       # -> '1,234,567'
+f"{1234567:_}"       # -> '1_234_567'
+f"{0.256:.1%}"       # -> '25.6%'
+f"{1e6:.2e}"         # -> '1.00e+06'
+```
+
+### Binary, hex, octal
+
+```python
+f"{5:b}"         # -> '101'
+f"{5:08b}"       # -> '00000101'  8-bit, zero-padded
+f"{255:x}"       # -> 'ff'
+f"{255:#x}"      # -> '0xff'
+f"{8:o}"         # -> '10'
+bin(5), hex(255) # -> ('0b101', '0xff')
+```
+
+### Nested and dynamic specs
+
+```python
+width, prec = 8, 3
+f"{3.14159:{width}.{prec}f}"   # -> '   3.142'
+```
+
+### str.format (older style)
+
+```python
+"{} + {} = {}".format(1, 2, 3)      # -> '1 + 2 = 3'
+"{name}: {0:.1f}".format(2.5, name="x")  # -> 'x: 2.5'
+```
+
+### Template strings: t-strings (3.14+)
+
+```python
+from string.templatelib import Template, Interpolation
+
+name = "Ada"
+t = t"Hello {name}"            # 3.14+ (PEP 750), returns a Template, not a str
+type(t)                        # -> <class 'string.templatelib.Template'>
+[p.value for p in t.interpolations]   # -> ['Ada']
+# For safe HTML/SQL rendering by libraries; rarely needed in interviews
+```
+
+## Docs
+
+- [f-strings (tutorial)](https://docs.python.org/3.14/tutorial/inputoutput.html#formatted-string-literals)
+- [f-strings (reference)](https://docs.python.org/3.14/reference/lexical_analysis.html#f-strings)
+- [Format specification mini-language](https://docs.python.org/3.14/library/string.html#format-specification-mini-language)
+- [Format examples](https://docs.python.org/3.14/library/string.html#format-examples)
+- [str.format](https://docs.python.org/3.14/library/stdtypes.html#str.format)
+- [Template strings (string.templatelib)](https://docs.python.org/3.14/library/string.templatelib.html)
+- [What's New in 3.14: PEP 750](https://docs.python.org/3.14/whatsnew/3.14.html#pep-750-template-string-literals)

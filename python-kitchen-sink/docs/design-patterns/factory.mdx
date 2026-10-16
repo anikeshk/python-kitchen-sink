@@ -1,0 +1,147 @@
+---
+title: Factory
+sidebar_position: 2
+---
+
+Centralises object creation so callers ask for "a kind" and get the right concrete class without `if/elif` chains everywhere. Shows up in LLD rounds when creating vehicles, parking spots, notification channels or payment methods from a type string or enum. In Python a dict registry mapping key to class is the idiomatic simple factory.
+
+## Syntax
+
+```python
+from abc import ABC, abstractmethod
+
+class Notifier(ABC):
+    @abstractmethod
+    def send(self, to: str, msg: str) -> str: ...
+
+class EmailNotifier(Notifier):
+    def send(self, to: str, msg: str) -> str:
+        return f"email {to}: {msg}"
+
+class SmsNotifier(Notifier):
+    def send(self, to: str, msg: str) -> str:
+        return f"sms {to}: {msg}"
+
+_NOTIFIERS: dict[str, type[Notifier]] = {"email": EmailNotifier, "sms": SmsNotifier}
+
+def create_notifier(kind: str) -> Notifier:
+    try:
+        return _NOTIFIERS[kind]()           # O(1) lookup, no if/elif chain
+    except KeyError:
+        raise ValueError(f"unknown notifier: {kind}") from None
+
+create_notifier("sms").send("amy", "hi")    # -> 'sms amy: hi'
+```
+
+### Keyed by Enum
+
+```python
+from enum import Enum, auto
+from dataclasses import dataclass
+
+class VehicleType(Enum):
+    BIKE = auto()
+    CAR = auto()
+    TRUCK = auto()
+
+@dataclass
+class Vehicle:
+    plate: str
+    wheels: int
+
+class Bike(Vehicle): ...
+class Car(Vehicle): ...
+class Truck(Vehicle): ...
+
+_WHEELS = {VehicleType.BIKE: (Bike, 2), VehicleType.CAR: (Car, 4), VehicleType.TRUCK: (Truck, 6)}
+
+def make_vehicle(vtype: VehicleType, plate: str) -> Vehicle:
+    cls, wheels = _WHEELS[vtype]
+    return cls(plate, wheels)
+
+make_vehicle(VehicleType.CAR, "KA-01")      # -> Car(plate='KA-01', wheels=4)
+```
+
+### Registering via decorator
+
+```python
+from typing import Callable
+
+class PaymentMethod:
+    def pay(self, amount: float) -> str: raise NotImplementedError
+
+_REGISTRY: dict[str, type[PaymentMethod]] = {}
+
+def register(name: str) -> Callable[[type[PaymentMethod]], type[PaymentMethod]]:
+    def deco(cls: type[PaymentMethod]) -> type[PaymentMethod]:
+        _REGISTRY[name] = cls
+        return cls
+    return deco
+
+@register("card")
+class CardPayment(PaymentMethod):
+    def pay(self, amount: float) -> str: return f"card {amount}"
+
+@register("upi")
+class UpiPayment(PaymentMethod):
+    def pay(self, amount: float) -> str: return f"upi {amount}"
+
+def payment_for(name: str) -> PaymentMethod:
+    return _REGISTRY[name]()
+
+payment_for("upi").pay(99.0)                # -> 'upi 99.0'
+# New methods plug in without touching the factory (open/closed principle).
+```
+
+### Factory method (subclasses decide what to create)
+
+```python
+from abc import ABC, abstractmethod
+
+class Spot:
+    size = "?"
+
+class CompactSpot(Spot): size = "compact"
+class LargeSpot(Spot): size = "large"
+
+class Floor(ABC):
+    def add_spots(self, n: int) -> list[Spot]:
+        return [self.create_spot() for _ in range(n)]   # template uses the hook
+
+    @abstractmethod
+    def create_spot(self) -> Spot: ...                  # the factory method
+
+class CompactFloor(Floor):
+    def create_spot(self) -> Spot: return CompactSpot()
+
+class TruckFloor(Floor):
+    def create_spot(self) -> Spot: return LargeSpot()
+
+[s.size for s in TruckFloor().add_spots(2)]         # -> ['large', 'large']
+```
+
+### classmethod as alternate constructor
+
+```python
+from dataclasses import dataclass
+
+@dataclass
+class Order:
+    id: str
+    amount: float
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Order":     # named factory; works for subclasses too
+        return cls(d["id"], float(d["amount"]))
+
+Order.from_dict({"id": "o1", "amount": "12.5"})  # -> Order(id='o1', amount=12.5)
+```
+
+## Docs
+
+- [abc.ABC and abstractmethod](https://docs.python.org/3.14/library/abc.html#abc.abstractmethod)
+- [enum.Enum](https://docs.python.org/3.14/library/enum.html#enum.Enum)
+- [dataclasses](https://docs.python.org/3.14/library/dataclasses.html)
+- [Class definitions (class decorators)](https://docs.python.org/3.14/reference/compound_stmts.html#class-definitions)
+- [classmethod](https://docs.python.org/3.14/library/functions.html#classmethod)
+- [type[C] (generic alias for classes)](https://docs.python.org/3.14/library/typing.html#the-type-of-class-objects)

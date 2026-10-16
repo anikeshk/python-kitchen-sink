@@ -1,0 +1,87 @@
+---
+title: defaultdict
+sidebar_position: 2
+---
+
+A dict that builds a default value on first access to a missing key, so you skip the `if key not in d` dance. Reach for `defaultdict(list)` for adjacency lists and grouping, `defaultdict(int)` for counting, `defaultdict(set)` for deduplicated neighbors.
+
+## Syntax
+
+```python
+from collections import defaultdict
+
+graph = defaultdict(list)
+for u, v in [(0, 1), (0, 2), (1, 2)]:
+    graph[u].append(v)
+    graph[v].append(u)   # undirected
+graph[0]  # -> [1, 2]
+```
+
+### Counting with int
+
+```python
+from collections import defaultdict
+freq = defaultdict(int)  # int() -> 0
+for c in "banana":
+    freq[c] += 1
+dict(freq)  # -> {'b': 1, 'a': 3, 'n': 2}
+```
+
+### set values
+
+```python
+from collections import defaultdict
+followers = defaultdict(set)
+followers["a"].add("b")
+followers["a"].add("b")  # no duplicate
+followers["a"]  # -> {'b'}
+```
+
+### Group anagrams (LeetCode 49)
+
+```python
+from collections import defaultdict
+
+def group_anagrams(strs: list[str]) -> list[list[str]]:
+    groups = defaultdict(list)
+    for s in strs:
+        groups["".join(sorted(s))].append(s)  # or tuple of 26 counts for O(n*k)
+    return list(groups.values())
+
+group_anagrams(["eat", "tea", "tan", "ate", "nat", "bat"])
+# -> [['eat', 'tea', 'ate'], ['tan', 'nat'], ['bat']]
+```
+
+### Nested / trie-ish
+
+```python
+from collections import defaultdict
+
+def tree():
+    return defaultdict(tree)   # infinitely nested
+
+trie = tree()
+for word in ["cat", "car"]:
+    node = trie
+    for ch in word:
+        node = node[ch]
+    node["$"] = True           # end-of-word marker
+
+grid_count = defaultdict(lambda: defaultdict(int))  # 2 levels
+grid_count["r1"]["c2"] += 1
+```
+
+### Gotcha: reading creates the key
+
+```python
+from collections import defaultdict
+d = defaultdict(list)
+_ = d["x"]       # inserts "x": [] as a side effect
+"x" in d         # -> True
+d.get("y")       # -> None, .get and `in` do NOT create keys
+```
+
+## Docs
+
+- [collections.defaultdict](https://docs.python.org/3.14/library/collections.html#collections.defaultdict)
+- [defaultdict examples](https://docs.python.org/3.14/library/collections.html#defaultdict-examples)

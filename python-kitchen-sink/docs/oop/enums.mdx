@@ -1,0 +1,129 @@
+---
+title: Enums
+sidebar_position: 9
+---
+
+`Enum` gives a fixed set of named constants, which is ideal for LLD states and categories (`OrderStatus`, `VehicleType`, `SpotSize`). Members are singletons compared with `is`/`==`, iterable, and can be looked up by value or by name.
+
+## Syntax
+
+```python
+from enum import Enum, auto
+
+class VehicleType(Enum):
+    BIKE = auto()           # 1
+    CAR = auto()            # 2
+    TRUCK = auto()          # 3
+
+vt = VehicleType.CAR
+print(vt, vt.name, vt.value)    # -> VehicleType.CAR CAR 2
+print(vt is VehicleType.CAR)    # -> True
+```
+
+### Lookup by value and by name
+
+```python
+from enum import Enum
+
+class Color(Enum):
+    RED = 1
+    GREEN = 2
+
+print(Color(1))             # -> Color.RED       (by value)
+print(Color["RED"])         # -> Color.RED       (by name)
+try:
+    Color(9)
+except ValueError as e:
+    print(e)                # -> 9 is not a valid Color
+```
+
+### Iterating members
+
+```python
+from enum import Enum, auto
+
+class SpotSize(Enum):
+    SMALL = auto()
+    MEDIUM = auto()
+    LARGE = auto()
+
+print(list(SpotSize))                   # -> [<SpotSize.SMALL: 1>, <SpotSize.MEDIUM: 2>, <SpotSize.LARGE: 3>]
+print([s.name for s in SpotSize])       # -> ['SMALL', 'MEDIUM', 'LARGE']
+print(len(SpotSize))                    # -> 3
+print(SpotSize.MEDIUM in SpotSize)      # -> True
+```
+
+### Enum as a state machine
+
+```python
+from enum import Enum, auto
+
+class OrderStatus(Enum):
+    PLACED = auto()
+    SHIPPED = auto()
+    DELIVERED = auto()
+    CANCELLED = auto()
+
+ALLOWED: dict[OrderStatus, set[OrderStatus]] = {
+    OrderStatus.PLACED: {OrderStatus.SHIPPED, OrderStatus.CANCELLED},
+    OrderStatus.SHIPPED: {OrderStatus.DELIVERED},
+}
+
+class Order:
+    def __init__(self) -> None:
+        self.status = OrderStatus.PLACED
+
+    def move_to(self, new: OrderStatus) -> None:
+        if new not in ALLOWED.get(self.status, set()):
+            raise ValueError(f"{self.status.name} -> {new.name} not allowed")
+        self.status = new
+
+o = Order()
+o.move_to(OrderStatus.SHIPPED)
+match o.status:                          # enums work great with match
+    case OrderStatus.SHIPPED:
+        print("on the way")              # -> on the way
+```
+
+### IntEnum and StrEnum
+
+```python
+from enum import IntEnum, StrEnum, auto
+
+class Priority(IntEnum):                 # members are ints: compare/sort with ints
+    LOW = 1
+    HIGH = 2
+
+print(Priority.HIGH > Priority.LOW, Priority.HIGH == 2)   # -> True True
+
+class Role(StrEnum):                     # 3.11+: members are strs
+    ADMIN = auto()                       # auto() -> lowercased name: 'admin'
+    USER = auto()
+
+print(Role.ADMIN == "admin", f"{Role.USER}")              # -> True user
+```
+
+### Methods and properties on an enum
+
+```python
+from enum import Enum
+
+class VehicleType(Enum):
+    BIKE = 1
+    CAR = 2
+
+    @property
+    def hourly_rate(self) -> int:
+        return {VehicleType.BIKE: 5, VehicleType.CAR: 10}[self]
+
+print(VehicleType.CAR.hourly_rate)       # -> 10
+```
+
+## Docs
+
+- [enum module](https://docs.python.org/3.14/library/enum.html)
+- [enum.Enum](https://docs.python.org/3.14/library/enum.html#enum.Enum)
+- [enum.auto](https://docs.python.org/3.14/library/enum.html#enum.auto)
+- [enum.IntEnum](https://docs.python.org/3.14/library/enum.html#enum.IntEnum)
+- [enum.StrEnum](https://docs.python.org/3.14/library/enum.html#enum.StrEnum)
+- [Enum HOWTO: programmatic access](https://docs.python.org/3.14/howto/enum.html#programmatic-access-to-enumeration-members-and-their-attributes)

@@ -1,0 +1,127 @@
+---
+title: Singleton
+sidebar_position: 1
+---
+
+Guarantees exactly one instance of a class with a global access point. Shows up in LLD rounds for things like `ParkingLot`, `ConfigManager`, `Logger` or an id generator. In Python a module-level instance is usually the right answer; be ready to discuss the thread-safe version and why singletons are often an anti-pattern.
+
+## Syntax
+
+```python
+# config.py
+class _Config:
+    def __init__(self) -> None:
+        self.settings: dict[str, str] = {}
+
+config = _Config()          # modules are imported once: this IS a singleton
+
+# elsewhere: from config import config
+config.settings["env"] = "prod"
+```
+
+### `__new__`-based
+
+```python
+class ParkingLot:
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._init()       # one-time init (__init__ runs on every call)
+        return cls._instance
+
+    def _init(self) -> None:
+        self.spots: dict[str, str | None] = {"A1": None, "A2": None}
+
+ParkingLot() is ParkingLot()            # -> True
+```
+
+### Thread-safe (double-checked locking)
+
+```python
+import threading
+
+class Logger:
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls):
+        if cls._instance is None:               # fast path, no lock
+            with cls._lock:
+                if cls._instance is None:       # re-check inside the lock
+                    inst = super().__new__(cls)
+                    inst.lines = []
+                    cls._instance = inst
+        return cls._instance
+
+    def log(self, msg: str) -> None:
+        self.lines.append(msg)
+
+instances = []
+ts = [threading.Thread(target=lambda: instances.append(Logger())) for _ in range(8)]
+for t in ts: t.start()
+for t in ts: t.join()
+len({id(i) for i in instances})                 # -> 1
+```
+
+### Decorator-based
+
+```python
+import functools
+
+def singleton(cls):
+    instances: dict[type, object] = {}
+
+    @functools.wraps(cls)
+    def get_instance(*args, **kwargs):
+        if cls not in instances:
+            instances[cls] = cls(*args, **kwargs)
+        return instances[cls]
+    return get_instance
+
+@singleton
+class RateLimiterRegistry:
+    def __init__(self) -> None:
+        self.limiters: dict[str, int] = {}
+
+RateLimiterRegistry() is RateLimiterRegistry()  # -> True
+# Caveat: the name now refers to a function, so isinstance()/subclassing break.
+```
+
+### Metaclass-based
+
+```python
+class SingletonMeta(type):
+    _instances: dict[type, object] = {}
+
+    def __call__(cls, *args, **kwargs):
+        if cls not in cls._instances:
+            cls._instances[cls] = super().__call__(*args, **kwargs)
+        return cls._instances[cls]
+
+class NotificationService(metaclass=SingletonMeta):
+    def __init__(self) -> None:
+        self.sent = 0
+
+NotificationService() is NotificationService()  # -> True; isinstance still works
+```
+
+### Caveat: often an anti-pattern
+
+```python
+# - Hidden global state: harder to test (state leaks between tests) and reason about.
+# - Tight coupling: callers reach for Logger() instead of receiving it.
+# Prefer: create one instance at startup and pass it in (dependency injection).
+class ParkingService:
+    def __init__(self, lot, logger) -> None:    # easy to swap fakes in tests
+        self.lot, self.logger = lot, logger
+```
+
+## Docs
+
+- [object.`__new__`](https://docs.python.org/3.14/reference/datamodel.html#object.__new__)
+- [Metaclasses](https://docs.python.org/3.14/reference/datamodel.html#metaclasses)
+- [How do I share global variables across modules? (FAQ)](https://docs.python.org/3.14/faq/programming.html#how-do-i-share-global-variables-across-modules)
+- [threading.Lock](https://docs.python.org/3.14/library/threading.html#threading.Lock)
+- [functools.wraps](https://docs.python.org/3.14/library/functools.html#functools.wraps)

@@ -1,0 +1,80 @@
+---
+title: Modular arithmetic
+sidebar_position: 5
+---
+
+Problems with huge answers ask for the result modulo `10**9 + 7`. Python ints never overflow, but taking mod at each step keeps numbers small and fast. Built-in `pow(b, e, mod)` does fast modular exponentiation and modular inverse.
+
+## Syntax
+
+```python
+MOD = 10**9 + 7
+
+pow(2, 10**18, MOD)  # fast exponentiation, O(log e); never pow(2, e) % MOD
+a, b = 10**12, 10**12
+a % MOD * (b % MOD) % MOD  # reduce operands, then the product
+```
+
+### Apply mod in DP
+
+```python
+MOD = 10**9 + 7
+
+def climb(n: int) -> int:
+    a, b = 1, 1
+    for _ in range(n - 1):
+        a, b = b, (a + b) % MOD   # reduce on every add/multiply
+    return b
+
+climb(1000)  # -> 107579939
+```
+
+### Modular inverse (3.8+)
+
+```python
+MOD = 10**9 + 7
+
+inv3 = pow(3, -1, MOD)   # requires gcd(x, MOD) == 1
+(3 * inv3) % MOD         # -> 1
+# division a / b mod p  ==  a * pow(b, -1, p) % p
+# Fermat alternative when MOD is prime: pow(b, MOD - 2, MOD)
+```
+
+### nCr mod p with precomputed factorials
+
+```python
+MOD = 10**9 + 7
+N = 10**5
+
+fact = [1] * (N + 1)
+for i in range(1, N + 1):
+    fact[i] = fact[i - 1] * i % MOD
+
+inv_fact = [1] * (N + 1)
+inv_fact[N] = pow(fact[N], -1, MOD)
+for i in range(N, 0, -1):
+    inv_fact[i - 1] = inv_fact[i] * i % MOD
+
+def ncr(n: int, r: int) -> int:     # O(1) per query after O(N) precompute
+    if r < 0 or r > n:
+        return 0
+    return fact[n] * inv_fact[r] % MOD * inv_fact[n - r] % MOD
+
+ncr(10, 3)  # -> 120
+```
+
+### % is non-negative for a positive modulus
+
+```python
+MOD = 10**9 + 7
+
+-7 % 3            # -> 2    (C++/Java give -1)
+(5 - 8) % MOD     # -> 1000000004   no need for (x % MOD + MOD) % MOD
+divmod(-7, 3)     # -> (-3, 2)
+```
+
+## Docs
+
+- [pow](https://docs.python.org/3.14/library/functions.html#pow)
+- [divmod](https://docs.python.org/3.14/library/functions.html#divmod)
+- [Numeric types: int, float, complex](https://docs.python.org/3.14/library/stdtypes.html#numeric-types-int-float-complex)

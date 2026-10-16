@@ -1,0 +1,90 @@
+---
+title: tuple
+sidebar_position: 2
+---
+
+Immutable sequence. Because tuples are hashable (when their items are), they work as dict keys and set members: grid coordinates, memo keys, visited states. Also the natural way to return multiple values and to push `(priority, item)` onto a heap.
+
+## Syntax
+
+```python
+t = (1, 2, 3)
+t = 1, 2, 3          # parentheses optional
+empty = ()
+from_list = tuple([1, 2])
+```
+
+### Single-element tuple
+
+```python
+one = (5,)           # trailing comma required
+not_tuple = (5)      # just the int 5
+type(one), type(not_tuple)   # -> (<class 'tuple'>, <class 'int'>)
+```
+
+### Immutability
+
+```python
+t = (1, 2, 3)
+t[0]                 # -> 1
+try:
+    t[0] = 9
+except TypeError as e:
+    print(e)         # 'tuple' object does not support item assignment
+t2 = t + (4,)        # new tuple -> (1, 2, 3, 4)
+# Contained mutable objects can still change: ([1], 2)[0].append(3)
+```
+
+### As dict keys and set members
+
+```python
+visited: set[tuple[int, int]] = set()
+visited.add((0, 0))
+(0, 0) in visited                    # -> True, O(1) average
+
+memo: dict[tuple[int, int], int] = {}
+memo[(2, 3)] = 10
+
+groups: dict[tuple[str, ...], list[str]] = {}
+key = tuple(sorted("eat"))           # anagram key -> ('a', 'e', 't')
+groups.setdefault(key, []).append("eat")
+# Lists are unhashable: use tuple(lst) as the key
+```
+
+### Lexicographic comparison
+
+```python
+(1, 2) < (1, 3)      # -> True
+(1, 2) < (2, 0)      # -> True, first element decides
+(1, 2) < (1, 2, 0)   # -> True, shorter prefix is smaller
+import heapq
+heap = [(3, "c"), (1, "a"), (2, "b")]
+heapq.heapify(heap)
+heapq.heappop(heap)  # -> (1, 'a'), ordered by first item, ties by second
+```
+
+### Methods
+
+```python
+t = (1, 2, 2, 3)
+t.count(2)           # -> 2
+t.index(3)           # -> 3
+len(t), 2 in t       # -> (4, True)
+```
+
+### Named tuples
+
+```python
+from collections import namedtuple
+Point = namedtuple("Point", ["x", "y"])
+p = Point(1, 2)
+p.x, p[1]            # -> (1, 2)
+```
+
+## Docs
+
+- [Tuples and sequences](https://docs.python.org/3.14/tutorial/datastructures.html#tuples-and-sequences)
+- [Tuples (stdtypes)](https://docs.python.org/3.14/library/stdtypes.html#tuples)
+- [Comparing sequences and other types](https://docs.python.org/3.14/tutorial/datastructures.html#comparing-sequences-and-other-types)
+- [Hashable (glossary)](https://docs.python.org/3.14/glossary.html#term-hashable)
+- [collections.namedtuple](https://docs.python.org/3.14/library/collections.html#collections.namedtuple)

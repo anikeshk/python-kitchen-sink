@@ -1,0 +1,137 @@
+---
+title: Dunder methods
+sidebar_position: 7
+---
+
+Dunder ("double underscore") methods hook your class into Python syntax: printing, `==`, hashing, sorting, `len`, `in`, iteration, indexing, truthiness and calling. In interviews you'll mostly need `__repr__`, `__eq__`/`__hash__` (dict/set keys) and `__lt__` (sorting and `heapq`).
+
+## Syntax
+
+```python
+class Vehicle:
+    def __init__(self, plate: str) -> None:
+        self.plate = plate
+
+    def __repr__(self) -> str:          # unambiguous, for debugging; used in lists/REPL
+        return f"Vehicle({self.plate!r})"
+
+    def __str__(self) -> str:           # human-friendly; used by print / f-strings
+        return f"Vehicle {self.plate}"
+
+v = Vehicle("KA-01")
+print(v)                                # -> Vehicle KA-01
+print([v])                              # -> [Vehicle('KA-01')]
+```
+
+### `__eq__` and `__hash__`
+
+```python
+class Spot:
+    def __init__(self, floor: int, num: int) -> None:
+        self.floor, self.num = floor, num
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Spot):
+            return NotImplemented
+        return (self.floor, self.num) == (other.floor, other.num)
+
+    def __hash__(self) -> int:          # needed again once __eq__ is defined
+        return hash((self.floor, self.num))
+
+print(Spot(1, 2) == Spot(1, 2))         # -> True
+print(len({Spot(1, 2), Spot(1, 2)}))    # -> 1
+
+class NoHash:
+    def __eq__(self, other: object) -> bool:
+        return True
+print(NoHash.__hash__)                  # -> None: defining __eq__ removes __hash__
+try:
+    {NoHash()}
+except TypeError as e:
+    print(e)                            # -> cannot use 'NoHash' as a set element (unhashable type: 'NoHash')
+```
+
+### `__lt__` for sorting and heaps
+
+```python
+import heapq
+
+class Task:
+    def __init__(self, priority: int, name: str) -> None:
+        self.priority, self.name = priority, name
+
+    def __lt__(self, other: Task) -> bool:   # sorted() and heapq only need <
+        return self.priority < other.priority
+
+    def __repr__(self) -> str:
+        return self.name
+
+tasks = [Task(3, "c"), Task(1, "a"), Task(2, "b")]
+print(sorted(tasks))                    # -> [a, b, c]  O(n log n)
+heapq.heapify(tasks)                    # O(n)
+print(heapq.heappop(tasks))             # -> a          O(log n)
+# Want all of < <= > >=? Add __eq__ and use @functools.total_ordering.
+```
+
+### Container protocol: len, iter, contains, getitem
+
+```python
+class ParkingFloor:
+    def __init__(self, spots: list[str]) -> None:
+        self._spots = spots
+
+    def __len__(self) -> int:
+        return len(self._spots)
+
+    def __iter__(self):
+        return iter(self._spots)
+
+    def __contains__(self, plate: str) -> bool:  # O(n) here; back with a set for O(1)
+        return plate in self._spots
+
+    def __getitem__(self, i: int) -> str:        # supports f[0], f[-1], and f[1:3]
+        return self._spots[i]
+
+f = ParkingFloor(["A", "B", "C"])
+print(len(f), "B" in f, f[0], f[1:])    # -> 3 True A ['B', 'C']
+print(list(f))                          # -> ['A', 'B', 'C']
+```
+
+### `__bool__`
+
+```python
+class Cart:
+    def __init__(self) -> None:
+        self.items: list[str] = []
+
+    def __bool__(self) -> bool:         # falls back to __len__ if not defined
+        return bool(self.items)
+
+cart = Cart()
+print("has items" if cart else "empty") # -> empty
+```
+
+### `__call__`: instances as functions
+
+```python
+class Discount:
+    def __init__(self, pct: float) -> None:
+        self.pct = pct
+
+    def __call__(self, price: float) -> float:
+        return price * (1 - self.pct)
+
+ten_off = Discount(0.1)
+print(ten_off(200))                     # -> 180.0
+print(callable(ten_off))                # -> True
+```
+
+## Docs
+
+- [Special method names](https://docs.python.org/3.14/reference/datamodel.html#special-method-names)
+- [object.__repr__](https://docs.python.org/3.14/reference/datamodel.html#object.__repr__)
+- [object.__hash__](https://docs.python.org/3.14/reference/datamodel.html#object.__hash__)
+- [Rich comparisons (object.__lt__)](https://docs.python.org/3.14/reference/datamodel.html#object.__lt__)
+- [Emulating container types](https://docs.python.org/3.14/reference/datamodel.html#emulating-container-types)
+- [object.__call__](https://docs.python.org/3.14/reference/datamodel.html#object.__call__)
+- [functools.total_ordering](https://docs.python.org/3.14/library/functools.html#functools.total_ordering)

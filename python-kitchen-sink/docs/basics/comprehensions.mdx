@@ -1,0 +1,75 @@
+---
+title: Comprehensions
+sidebar_position: 7
+---
+
+Concise expressions that build a list, dict, set or generator from an iterable. Use them for transforms, filters, frequency maps and grid initialization. Generator expressions are lazy, so pass them straight to `sum`, `max`, `any` or `all` to avoid building a list.
+
+## Syntax
+
+```python
+squares = [x * x for x in range(5)]  # -> [0, 1, 4, 9, 16]
+```
+
+### With a filter
+
+```python
+evens = [x for x in nums if x % 2 == 0]
+```
+
+### if-else inside (transform, not filter)
+
+```python
+labels = ["even" if x % 2 == 0 else "odd" for x in nums]
+clamped = [x if x > 0 else 0 for x in nums]
+# Note: if-else goes before `for`; a filter `if` goes after
+```
+
+### Dict comprehension
+
+```python
+idx = {x: i for i, x in enumerate(nums)}     # value -> index
+inv = {v: k for k, v in d.items()}           # invert a dict
+counts = {c: s.count(c) for c in set(s)}     # O(n * k); prefer Counter
+```
+
+### Set comprehension
+
+```python
+uniq_lens = {len(w) for w in words}
+```
+
+### Generator expression
+
+```python
+total = sum(x * x for x in nums)      # no intermediate list, O(1) space
+has_neg = any(x < 0 for x in nums)    # short-circuits
+longest = max(len(w) for w in words)
+gen = (x for x in nums if x > 0)      # parentheses -> lazy generator
+```
+
+### Nested: flatten
+
+```python
+matrix = [[1, 2], [3, 4], [5, 6]]
+flat = [x for row in matrix for x in row]   # -> [1, 2, 3, 4, 5, 6]
+# Order of `for` clauses matches nested for loops, outer first
+```
+
+### Nested: 2D grid
+
+```python
+rows, cols = 3, 4
+grid = [[0] * cols for _ in range(rows)]    # correct grid init
+matrix = [[1, 2], [3, 4], [5, 6]]
+transposed = [[row[c] for row in matrix] for c in range(len(matrix[0]))]
+# -> [[1, 3, 5], [2, 4, 6]]
+cells = [(r, c) for r in range(rows) for c in range(cols)]
+```
+
+## Docs
+
+- [List comprehensions](https://docs.python.org/3.14/tutorial/datastructures.html#list-comprehensions)
+- [Nested list comprehensions](https://docs.python.org/3.14/tutorial/datastructures.html#nested-list-comprehensions)
+- [Displays for lists, sets and dictionaries](https://docs.python.org/3.14/reference/expressions.html#displays-for-lists-sets-and-dictionaries)
+- [Generator expressions](https://docs.python.org/3.14/reference/expressions.html#generator-expressions)

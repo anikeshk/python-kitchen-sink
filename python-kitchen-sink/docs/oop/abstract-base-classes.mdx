@@ -1,0 +1,104 @@
+---
+title: Abstract base classes
+sidebar_position: 3
+---
+
+An ABC defines an interface: subclasses must implement every `@abstractmethod` or they can't be instantiated. In LLD interviews use it to declare contracts like `PaymentMethod`, `ParkingStrategy` or `Notifier` that concrete classes implement.
+
+## Syntax
+
+```python
+from abc import ABC, abstractmethod
+
+class PaymentMethod(ABC):
+    @abstractmethod
+    def pay(self, amount: float) -> bool: ...
+
+class CardPayment(PaymentMethod):
+    def pay(self, amount: float) -> bool:
+        print(f"charged {amount} to card")
+        return True
+
+CardPayment().pay(9.5)          # -> charged 9.5 to card
+```
+
+### Instantiating an ABC raises TypeError
+
+```python
+from abc import ABC, abstractmethod
+
+class Notifier(ABC):
+    @abstractmethod
+    def send(self, msg: str) -> None: ...
+
+class Broken(Notifier):
+    pass                        # forgot to implement send
+
+for cls in (Notifier, Broken):
+    try:
+        cls()
+    except TypeError as e:
+        print(e)
+# -> Can't instantiate abstract class Notifier without an implementation for abstract method 'send'
+# -> (same for Broken)
+```
+
+### Abstract property
+
+```python
+from abc import ABC, abstractmethod
+
+class Vehicle(ABC):
+    @property
+    @abstractmethod                 # @abstractmethod must be innermost
+    def size(self) -> int: ...
+
+class Bike(Vehicle):
+    @property
+    def size(self) -> int:
+        return 1
+
+print(Bike().size)                  # -> 1
+```
+
+### Shared concrete logic + abstract hooks (template method)
+
+```python
+from abc import ABC, abstractmethod
+
+class Report(ABC):
+    def render(self) -> str:        # concrete: shared algorithm
+        return f"{self.header()}\n{self.body()}"
+
+    @abstractmethod
+    def header(self) -> str: ...
+
+    @abstractmethod
+    def body(self) -> str: ...
+
+class SalesReport(Report):
+    def header(self) -> str:
+        return "SALES"
+    def body(self) -> str:
+        return "42 orders"
+
+print(SalesReport().render())       # -> SALES / 42 orders
+```
+
+### Abstract classmethod / staticmethod
+
+```python
+from abc import ABC, abstractmethod
+
+class Shape(ABC):
+    @classmethod
+    @abstractmethod
+    def unit(cls) -> Shape: ...   # no quotes needed in 3.14+
+```
+
+## Docs
+
+- [abc module](https://docs.python.org/3.14/library/abc.html)
+- [abc.ABC](https://docs.python.org/3.14/library/abc.html#abc.ABC)
+- [abc.abstractmethod](https://docs.python.org/3.14/library/abc.html#abc.abstractmethod)
+- [collections.abc (built-in ABCs)](https://docs.python.org/3.14/library/collections.abc.html#collections-abstract-base-classes)

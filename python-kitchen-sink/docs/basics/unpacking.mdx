@@ -1,0 +1,78 @@
+---
+title: Unpacking
+sidebar_position: 8
+---
+
+Assign elements of an iterable to multiple names in one statement. Used everywhere in interviews: swapping, popping `(dist, node)` off a heap, iterating pairs, and spreading arguments with `*` and `**`.
+
+## Syntax
+
+```python
+a, b = 1, 2
+x, y = point            # point is a 2-tuple
+```
+
+### Swap
+
+```python
+a, b = b, a
+nums[i], nums[j] = nums[j], nums[i]
+```
+
+### Star unpacking
+
+```python
+first, *rest = [1, 2, 3, 4]      # first=1, rest=[2, 3, 4]
+*init, last = [1, 2, 3, 4]       # init=[1, 2, 3], last=4
+head, *mid, tail = "abcde"       # mid=['b', 'c', 'd']
+_, second, *_ = [9, 8, 7, 6]     # ignore with _
+```
+
+### Nested
+
+```python
+(a, b), c = (1, 2), 3
+name, (lat, lng) = ("home", (12.9, 77.6))
+```
+
+### In for loops
+
+```python
+for i, (x, y) in enumerate([(1, 2), (3, 4)]):
+    ...
+for k, v in d.items():
+    ...
+for r, c in [(0, 1), (1, 0), (0, -1), (-1, 0)]:   # 4-direction moves
+    ...
+```
+
+### `*` and `**` in calls
+
+```python
+def f(a, b, c): ...
+
+args = [1, 2, 3]
+f(*args)                     # f(1, 2, 3)
+kwargs = {"a": 1, "b": 2, "c": 3}
+f(**kwargs)                  # f(a=1, b=2, c=3)
+print(*nums)                 # space-separated
+print(*nums, sep=",")
+list(zip(*matrix))           # transpose
+```
+
+### `*` and `**` in literals
+
+```python
+merged = [*xs, *ys]                # concat lists
+s = {*xs, *ys}                     # union into a set
+cfg = {**defaults, **overrides}    # later keys win
+t = (*xs, 0)
+```
+
+## Docs
+
+- [Assignment statements](https://docs.python.org/3.14/reference/simple_stmts.html#assignment-statements)
+- [Tuples and sequences](https://docs.python.org/3.14/tutorial/datastructures.html#tuples-and-sequences)
+- [Unpacking argument lists](https://docs.python.org/3.14/tutorial/controlflow.html#unpacking-argument-lists)
+- [Expression lists](https://docs.python.org/3.14/reference/expressions.html#expression-lists)
+- [Dictionary displays](https://docs.python.org/3.14/reference/expressions.html#dictionary-displays)

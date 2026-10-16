@@ -1,0 +1,100 @@
+---
+title: Tuples and tie-breaking
+sidebar_position: 3
+---
+
+Heap items are compared with `<`, so tuples order by the first field, then the next. Push `(priority, item)`; when items can't be compared (dicts, nodes, objects), add a unique counter as a tiebreaker. This is the shape of every Dijkstra and task-scheduler solution.
+
+## Syntax
+
+```python
+import heapq
+
+pq = []
+heapq.heappush(pq, (2, "write"))
+heapq.heappush(pq, (1, "plan"))
+heapq.heappush(pq, (2, "test"))   # tie on 2 -> compares "test" < "write"
+heapq.heappop(pq)                 # -> (1, 'plan')
+```
+
+### Counter tiebreaker for incomparable items
+
+```python
+import heapq
+from itertools import count
+
+class ListNode:
+    def __init__(self, val: int):
+        self.val = val
+
+tie = count()
+pq = []
+for node in [ListNode(3), ListNode(3)]:
+    heapq.heappush(pq, (node.val, next(tie), node))  # never compares nodes
+heapq.heappop(pq)[0]  # -> 3
+# Without the counter: TypeError: '<' not supported between 'ListNode' objects
+```
+
+### Dijkstra with (dist, node)
+
+```python
+import heapq
+
+def dijkstra(graph: dict[int, list[tuple[int, int]]], src: int) -> dict[int, int]:
+    dist = {src: 0}
+    pq = [(0, src)]                      # (distance, node)
+    while pq:
+        d, u = heapq.heappop(pq)
+        if d > dist.get(u, float("inf")):
+            continue                     # stale entry (lazy deletion)
+        for v, w in graph[u]:
+            nd = d + w
+            if nd < dist.get(v, float("inf")):
+                dist[v] = nd
+                heapq.heappush(pq, (nd, v))
+    return dist                          # O((V + E) log V)
+
+g = {0: [(1, 4), (2, 1)], 1: [], 2: [(1, 2)]}
+dijkstra(g, 0)  # -> {0: 0, 1: 3, 2: 1}
+```
+
+### Custom objects: __lt__
+
+```python
+import heapq
+
+class Task:
+    def __init__(self, pri: int, name: str):
+        self.pri, self.name = pri, name
+
+    def __lt__(self, other: "Task") -> bool:
+        return self.pri < other.pri   # heapq only needs `<`
+
+pq = [Task(3, "c"), Task(1, "a")]
+heapq.heapify(pq)
+heapq.heappop(pq).name  # -> 'a'
+```
+
+### dataclass(order=True)
+
+```python
+import heapq
+from dataclasses import dataclass, field
+
+@dataclass(order=True)
+class Job:
+    priority: int
+    name: str = field(compare=False)  # excluded from ordering
+
+pq = [Job(2, "b"), Job(1, "a")]
+heapq.heapify(pq)
+heapq.heappop(pq)  # -> Job(priority=1, name='a')
+```
+
+## Docs
+
+- [Priority queue implementation notes](https://docs.python.org/3.14/library/heapq.html#priority-queue-implementation-notes)
+- [itertools.count](https://docs.python.org/3.14/library/itertools.html#itertools.count)
+- [dataclasses.dataclass (order)](https://docs.python.org/3.14/library/dataclasses.html#dataclasses.dataclass)
+- [dataclasses.field](https://docs.python.org/3.14/library/dataclasses.html#dataclasses.field)
+- [object.__lt__](https://docs.python.org/3.14/reference/datamodel.html#object.__lt__)

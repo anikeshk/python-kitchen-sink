@@ -1,0 +1,98 @@
+---
+title: uuid and id generation
+sidebar_position: 7
+---
+
+Every LLD entity (user, ticket, booking, order) needs an id. Use `uuid.uuid4()` for random, globally unique ids; `uuid.uuid7()` (3.14+) when you want ids that sort by creation time; and `itertools.count` for simple readable sequential ids in an interview.
+
+## Syntax
+
+```python
+import uuid
+
+booking_id = uuid.uuid4()           # random, 122 bits of randomness
+str(booking_id)                     # -> 'f3b1c2e4-...' (36 chars)
+booking_id.hex                      # -> 32 hex chars, no dashes
+```
+
+### Entity with a default uuid
+
+```python
+import uuid
+from dataclasses import dataclass, field
+
+@dataclass
+class Ticket:
+    plate: str
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))   # new id per instance
+
+Ticket("KA-01").id != Ticket("KA-02").id    # -> True
+```
+
+### uuid7: time-ordered (3.14+)
+
+```python
+import uuid
+
+a = uuid.uuid7()                    # 3.14+; 48-bit ms timestamp + random bits
+b = uuid.uuid7()
+a < b                               # -> True: sorts by creation time
+a.version                           # -> 7
+# Good for DB primary keys (index-friendly) and roughly chronological logs.
+# 3.14 also adds uuid.uuid6, uuid.uuid8, uuid.NIL and uuid.MAX
+```
+
+### Parsing and comparing
+
+```python
+import uuid
+
+u = uuid.UUID("12345678-1234-5678-1234-567812345678")
+u == uuid.UUID(str(u))              # -> True (round-trips)
+u.int, u.bytes                      # 128-bit int / 16 raw bytes
+uuid.uuid5(uuid.NAMESPACE_DNS, "example.com")   # deterministic, name-based
+```
+
+### Sequential ids with itertools.count
+
+```python
+import itertools
+
+class ParkingLot:
+    _ids = itertools.count(1)       # class-level, shared across instances
+
+    def issue_ticket(self) -> str:
+        return f"T{next(self._ids):05d}"
+
+lot = ParkingLot()
+lot.issue_ticket(), lot.issue_ticket()      # -> ('T00001', 'T00002')
+```
+
+### Thread-safe counter id generator
+
+```python
+import itertools
+import threading
+
+class IdGenerator:
+    def __init__(self, start: int = 1) -> None:
+        self._counter = itertools.count(start)
+        self._lock = threading.Lock()
+
+    def next_id(self) -> int:
+        with self._lock:            # don't rely on next() being atomic (free-threaded builds)
+            return next(self._counter)
+
+gen = IdGenerator()
+gen.next_id(), gen.next_id()        # -> (1, 2)
+```
+
+## Docs
+
+- [uuid module](https://docs.python.org/3.14/library/uuid.html)
+- [uuid.uuid4](https://docs.python.org/3.14/library/uuid.html#uuid.uuid4)
+- [uuid.uuid7](https://docs.python.org/3.14/library/uuid.html#uuid.uuid7)
+- [uuid.uuid5](https://docs.python.org/3.14/library/uuid.html#uuid.uuid5)
+- [uuid.UUID](https://docs.python.org/3.14/library/uuid.html#uuid.UUID)
+- [itertools.count](https://docs.python.org/3.14/library/itertools.html#itertools.count)
+- [dataclasses.field (default_factory)](https://docs.python.org/3.14/library/dataclasses.html#dataclasses.field)
