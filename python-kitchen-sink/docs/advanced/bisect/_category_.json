@@ -1,9 +1,9 @@
 {
   "label": "bisect",
-  "position": 6,
+  "position": 8,
   "link": {
     "type": "generated-index",
-    "slug": "/bisect",
+    "slug": "/advanced/bisect",
     "description": "Binary search on sorted lists."
   }
 }

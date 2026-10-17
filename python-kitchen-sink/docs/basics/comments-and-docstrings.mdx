@@ -1,0 +1,155 @@
+---
+title: Comments and docstrings
+sidebar_position: 12
+---
+
+`#` starts a comment that runs to the end of the line; Python has no block-comment syntax, so use consecutive `#` lines. A docstring is a string literal as the first statement of a module, function, class or method; it's stored on `__doc__` and shown by `help()`. In interviews, comment the *why* (invariants, complexity, edge cases) rather than restating the code, and give public classes and methods a one-line docstring in LLD answers.
+
+## Syntax
+
+```python
+# Full-line comment: explains the next block.
+MAX_SPOTS = 100  # inline comment: two spaces before #, one after
+
+# No block comments: stack # lines instead.
+# Each line needs its own #.
+
+def area(w: float, h: float) -> float:
+    """Return the area of a w x h rectangle."""   # docstring
+    return w * h
+
+area.__doc__   # -> 'Return the area of a w x h rectangle.'
+help(area)     # prints the signature and docstring
+```
+
+### Comment the why, not the what
+
+```python
+nums = [5, 3, 8, 1]
+
+# Bad: restates the code
+i = 0  # set i to 0
+
+# Good: explains intent, invariants and complexity
+# Sort first so two pointers can move inward: O(n log n) total.
+nums.sort()
+lo, hi = 0, len(nums) - 1
+# Invariant: every pair outside [lo, hi] has been ruled out.
+```
+
+### Multi-line docstrings (PEP 257)
+
+```python
+def top_k(nums: list[int], k: int) -> list[int]:
+    """Return the k largest values in descending order.
+
+    Uses a size-k min-heap: O(n log k) time, O(k) space.
+
+    Args:
+        nums: Input values; not modified.
+        k: Number of values to return, 0 <= k <= len(nums).
+
+    Raises:
+        ValueError: If k is negative.
+    """
+    import heapq
+    if k < 0:
+        raise ValueError("k must be >= 0")
+    return heapq.nlargest(k, nums)
+
+print(top_k.__doc__.splitlines()[0])   # -> Return the k largest values in descending order.
+```
+
+Summary line first, then a blank line, then details. Args/Returns/Raises is the common Google style; reST (`:param k:`) and NumPy styles are also widespread.
+
+### Class, method and module docstrings
+
+```python
+"""Parking lot domain model.
+
+A module docstring is the first statement in the file.
+"""
+
+class ParkingLot:
+    """A lot with a fixed number of spots."""
+
+    def __init__(self, capacity: int) -> None:
+        """Create a lot with `capacity` empty spots."""
+        self.capacity = capacity
+
+    def is_full(self) -> bool:
+        """Return True if no spots are free."""
+        return self.capacity == 0
+
+ParkingLot.__doc__           # -> 'A lot with a fixed number of spots.'
+ParkingLot.is_full.__doc__   # -> 'Return True if no spots are free.'
+```
+
+### Triple-quoted strings are not comments
+
+```python
+def f() -> int:
+    x = 1
+    """This is a string expression, not a comment.
+    It's evaluated and discarded; only the first statement is a docstring."""
+    return x
+
+f.__doc__   # -> None
+
+# To disable code temporarily, prefix each line with #
+# print("debug")
+```
+
+### Type hints instead of type comments
+
+```python
+# Prefer annotations; they're checked by type checkers and visible to tools.
+def ratio(a: int, b: int) -> float:
+    return a / b
+
+# Old-style type comments (pre-3.5 code) still appear in some codebases:
+counts = {}  # type: dict[str, int]
+```
+
+### Special comments
+
+```python
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-   (unneeded: UTF-8 is the default source encoding)
+
+import os  # noqa: F401           linters: suppress a specific warning on this line
+value: int = "x"  # type: ignore  type checkers: suppress errors on this line
+
+# TODO: handle reservations      common marker for follow-up work
+```
+
+The shebang only matters on the first line of an executable script. `# noqa` and `# type: ignore` are tool conventions (flake8/ruff, mypy/pyright), not language features.
+
+### doctest: runnable examples in docstrings
+
+```python
+def fee(hours: int) -> int:
+    """Parking fee: first hour free, then 20 per hour.
+
+    >>> fee(1)
+    0
+    >>> fee(3)
+    40
+    """
+    return 0 if hours <= 1 else 20 * (hours - 1)
+
+if __name__ == "__main__":
+    import doctest
+    doctest.testmod(verbose=True)   # runs the >>> examples and compares output
+```
+
+## Docs
+
+- [Comments (lexical analysis)](https://docs.python.org/3.14/reference/lexical_analysis.html#comments)
+- [Encoding declarations](https://docs.python.org/3.14/reference/lexical_analysis.html#encoding-declarations)
+- [Documentation strings (tutorial)](https://docs.python.org/3.14/tutorial/controlflow.html#documentation-strings)
+- [Glossary: docstring](https://docs.python.org/3.14/glossary.html#term-docstring)
+- [help()](https://docs.python.org/3.14/library/functions.html#help)
+- [doctest](https://docs.python.org/3.14/library/doctest.html)
+- [PEP 257: Docstring conventions](https://peps.python.org/pep-0257/)
+- [PEP 8: Comments](https://peps.python.org/pep-0008/#comments)

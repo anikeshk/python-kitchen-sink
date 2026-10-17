@@ -106,10 +106,17 @@ except* TypeError as eg:
 
 ### Common built-in exceptions
 
-```python
-# ValueError, TypeError, KeyError, IndexError, ZeroDivisionError,
-# AttributeError, StopIteration, RecursionError, NotImplementedError
-```
+| Exception | Description |
+| --- | --- |
+| `ValueError` | An operation receives the right type but an invalid value, such as `int("abc")`. |
+| `TypeError` | An operation receives an unsupported type, such as adding a string to an integer. Also raised for incorrect function arguments. |
+| `KeyError` | A mapping key is missing, such as accessing `d["missing"]` when that key is not in the dictionary. |
+| `IndexError` | A sequence index is out of range, such as accessing `items[3]` in a three-item list. Out-of-range slices do not raise this error. |
+| `ZeroDivisionError` | Division or modulo uses a zero divisor, such as `10 / 0`, `10 // 0`, or `10 % 0`. |
+| `AttributeError` | An attribute lookup or assignment fails, such as accessing `obj.name` when the object has no such attribute. |
+| `StopIteration` | An iterator has no more items. Raised by `next(it)` without a default and handled automatically by a `for` loop. |
+| `RecursionError` | Execution exceeds Python's maximum recursion depth, often because recursive calls have no reachable base case. |
+| `NotImplementedError` | A method or operation is intended to be implemented but is not yet available, often in a base class that requires a subclass override. |
 
 ## Docs
 

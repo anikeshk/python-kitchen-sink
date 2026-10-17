@@ -4,6 +4,6 @@
   "link": {
     "type": "generated-index",
     "slug": "/oop",
-    "description": "Classes, inheritance, ABCs, protocols, dataclasses, enums, type hints."
+    "description": "Classes, inheritance, ABCs, protocols, dataclasses, enums, type hints, unit testing."
   }
 }

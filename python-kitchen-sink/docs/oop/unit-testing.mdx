@@ -1,0 +1,313 @@
+---
+title: Unit testing
+sidebar_position: 13
+---
+
+`unittest` is the stdlib test framework: subclass `TestCase`, name methods `test_*`, and assert with `self.assert*`. In LLD rounds, interviewers often ask "how would you test this?" A good answer covers the happy path, edge cases and error cases (Arrange-Act-Assert), and shows the design is testable: dependencies (repos, clocks, payment gateways) are injected so tests can swap in fakes or mocks. Tests should be fast, isolated and deterministic.
+
+## Syntax
+
+```python
+import unittest
+
+class ParkingLot:
+    def __init__(self, capacity: int) -> None:
+        self.capacity = capacity
+        self.parked: set[str] = set()
+
+    def park(self, plate: str) -> None:
+        if len(self.parked) >= self.capacity:
+            raise RuntimeError("lot full")
+        self.parked.add(plate)
+
+class TestParkingLot(unittest.TestCase):
+    def setUp(self) -> None:                 # runs before every test_* method
+        self.lot = ParkingLot(capacity=1)
+
+    def test_park_adds_car(self) -> None:
+        self.lot.park("KA-01")               # act
+        self.assertIn("KA-01", self.lot.parked)   # assert
+
+    def test_park_when_full_raises(self) -> None:
+        self.lot.park("KA-01")               # arrange
+        with self.assertRaises(RuntimeError):
+            self.lot.park("KA-02")
+
+if __name__ == "__main__":
+    unittest.main()                          # or: python -m unittest -v
+```
+
+### Common assertions
+
+```python
+import unittest
+
+class TestAssertions(unittest.TestCase):
+    def test_examples(self) -> None:
+        self.assertEqual(2 + 2, 4)
+        self.assertNotEqual("a", "b")
+        self.assertTrue([1])                 # truthiness
+        self.assertFalse([])
+        self.assertIs(None, None)            # identity
+        self.assertIsNone(None)
+        self.assertIsInstance(3, int)
+        self.assertIn(2, [1, 2, 3])
+        self.assertAlmostEqual(0.1 + 0.2, 0.3)       # floats: 7 decimal places
+        self.assertCountEqual([3, 1, 2], [1, 2, 3])  # same items, any order
+        self.assertDictEqual({"a": 1}, {"a": 1})     # assertEqual on dicts diffs too
+        self.assertGreater(5, 3)
+```
+
+### Testing exceptions
+
+```python
+import unittest
+
+class InsufficientFundsError(Exception):
+    def __init__(self, balance: int, amount: int) -> None:
+        super().__init__(f"need {amount}, have {balance}")
+        self.balance, self.amount = balance, amount
+
+class Wallet:
+    def __init__(self, balance: int) -> None:
+        self.balance = balance
+
+    def pay(self, amount: int) -> None:
+        if amount > self.balance:
+            raise InsufficientFundsError(self.balance, amount)
+        self.balance -= amount
+
+class TestWallet(unittest.TestCase):
+    def test_overdraw_raises_with_details(self) -> None:
+        w = Wallet(10)
+        with self.assertRaises(InsufficientFundsError) as ctx:
+            w.pay(25)
+        self.assertEqual(ctx.exception.amount, 25)   # inspect the raised exception
+        self.assertEqual(w.balance, 10)              # state unchanged on failure
+
+    def test_message(self) -> None:
+        with self.assertRaisesRegex(InsufficientFundsError, r"need 25"):
+            Wallet(10).pay(25)
+```
+
+### Table-driven tests: subTest
+
+```python
+import unittest
+
+def fee(hours: int) -> int:
+    if hours < 0:
+        raise ValueError("negative hours")
+    return 0 if hours <= 1 else 20 * (hours - 1)
+
+class TestFee(unittest.TestCase):
+    def test_fee_table(self) -> None:
+        cases = [(0, 0), (1, 0), (2, 20), (5, 80)]   # boundaries + typical
+        for hours, expected in cases:
+            with self.subTest(hours=hours):          # each case reported separately
+                self.assertEqual(fee(hours), expected)
+
+    def test_negative(self) -> None:
+        with self.assertRaises(ValueError):
+            fee(-1)
+```
+
+### Fixtures: setUp, tearDown, setUpClass, addCleanup
+
+```python
+import unittest
+
+class TestFixtures(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:             # once per class (expensive shared setup)
+        cls.config = {"rate": 20}
+
+    def setUp(self) -> None:                 # before each test: fresh state
+        self.events: list[str] = []
+        self.addCleanup(self.events.clear)   # runs after the test, even if setUp later fails
+
+    def tearDown(self) -> None:              # after each test
+        pass
+
+    def test_uses_fresh_state(self) -> None:
+        self.events.append("parked")
+        self.assertEqual(self.events, ["parked"])
+```
+
+### Design for testability: inject dependencies, use a fake
+
+```python
+import unittest
+from typing import Protocol
+
+class OrderRepo(Protocol):
+    def save(self, order_id: str, total: int) -> None: ...
+    def get(self, order_id: str) -> int | None: ...
+
+class InMemoryOrderRepo:                     # fake: real behavior, no DB
+    def __init__(self) -> None:
+        self.rows: dict[str, int] = {}
+    def save(self, order_id: str, total: int) -> None:
+        self.rows[order_id] = total
+    def get(self, order_id: str) -> int | None:
+        return self.rows.get(order_id)
+
+class OrderService:
+    def __init__(self, repo: OrderRepo) -> None:   # injected, not created inside
+        self.repo = repo
+
+    def place(self, order_id: str, prices: list[int]) -> int:
+        total = sum(prices)
+        self.repo.save(order_id, total)
+        return total
+
+class TestOrderService(unittest.TestCase):
+    def test_place_saves_total(self) -> None:
+        repo = InMemoryOrderRepo()
+        OrderService(repo).place("o1", [10, 20])
+        self.assertEqual(repo.get("o1"), 30)       # assert on state, not calls
+```
+
+### Mocks: Mock, return_value, side_effect
+
+```python
+import unittest
+from unittest.mock import Mock
+
+class PaymentGateway:
+    def charge(self, user: str, amount: int) -> bool:
+        raise NotImplementedError            # real network call
+
+class Checkout:
+    def __init__(self, gateway: PaymentGateway) -> None:
+        self.gateway = gateway
+
+    def pay(self, user: str, amount: int) -> str:
+        try:
+            return "paid" if self.gateway.charge(user, amount) else "declined"
+        except TimeoutError:
+            return "retry"
+
+class TestCheckout(unittest.TestCase):
+    def test_success_calls_gateway_once(self) -> None:
+        gateway = Mock(spec=PaymentGateway)  # spec: typos like .chrage raise AttributeError
+        gateway.charge.return_value = True
+        self.assertEqual(Checkout(gateway).pay("u1", 50), "paid")
+        gateway.charge.assert_called_once_with("u1", 50)
+
+    def test_timeout(self) -> None:
+        gateway = Mock(spec=PaymentGateway)
+        gateway.charge.side_effect = TimeoutError     # raise instead of return
+        self.assertEqual(Checkout(gateway).pay("u1", 50), "retry")
+
+    def test_side_effect_sequence(self) -> None:
+        gateway = Mock(spec=PaymentGateway)
+        gateway.charge.side_effect = [False, True]    # successive return values
+        c = Checkout(gateway)
+        self.assertEqual([c.pay("u1", 5), c.pay("u1", 5)], ["declined", "paid"])
+        self.assertEqual(gateway.charge.call_count, 2)
+```
+
+### patch: replace a name during a test
+
+```python
+import unittest
+import uuid
+from unittest.mock import patch
+
+def new_ticket_id() -> str:
+    return f"T-{uuid.uuid4().hex[:6]}"
+
+class TestTicketId(unittest.TestCase):
+    # Patch where the name is looked up: this module uses uuid.uuid4,
+    # so patch "uuid.uuid4". For `from x import y` in module m, patch "m.y".
+    @patch("uuid.uuid4")
+    def test_id_format(self, mock_uuid4) -> None:
+        mock_uuid4.return_value.hex = "abcdef123456"
+        self.assertEqual(new_ticket_id(), "T-abcdef")
+
+    def test_context_manager_form(self) -> None:
+        with patch("uuid.uuid4") as mock_uuid4:
+            mock_uuid4.return_value.hex = "000000ffffff"
+            self.assertEqual(new_ticket_id(), "T-000000")
+```
+
+### Deterministic time: inject a clock
+
+```python
+import unittest
+from collections.abc import Callable
+from datetime import datetime, timedelta
+
+class RateLimiter:
+    """Allow `limit` calls per `window`; `now` is injectable for tests."""
+    def __init__(self, limit: int, window: timedelta,
+                 now: Callable[[], datetime] = datetime.now) -> None:
+        self.limit, self.window, self.now = limit, window, now
+        self.calls: list[datetime] = []
+
+    def allow(self) -> bool:
+        t = self.now()
+        self.calls = [c for c in self.calls if t - c < self.window]
+        if len(self.calls) < self.limit:
+            self.calls.append(t)
+            return True
+        return False
+
+class TestRateLimiter(unittest.TestCase):
+    def test_window_resets(self) -> None:
+        current = datetime(2026, 1, 1, 12, 0, 0)
+        limiter = RateLimiter(2, timedelta(seconds=10), now=lambda: current)
+        self.assertEqual([limiter.allow() for _ in range(3)], [True, True, False])
+        current += timedelta(seconds=10)            # advance the fake clock, no sleep
+        self.assertTrue(limiter.allow())
+```
+
+### Running tests in a single file or notebook
+
+```python
+import unittest
+
+class TestSmoke(unittest.TestCase):
+    def test_ok(self) -> None:
+        self.assertTrue(True)
+
+# Interview editors / notebooks: don't let unittest.main() call sys.exit
+unittest.main(argv=["ignored"], exit=False, verbosity=2)
+
+# Command line:
+#   python -m unittest -v                 discover test*.py in the current dir
+#   python -m unittest test_lot.TestParkingLot.test_park_adds_car
+```
+
+### pytest equivalent (third-party, common in industry)
+
+```python
+# test_fee.py, run with: pytest -q
+import pytest
+
+def fee(hours: int) -> int:
+    if hours < 0:
+        raise ValueError("negative hours")
+    return 0 if hours <= 1 else 20 * (hours - 1)
+
+@pytest.mark.parametrize("hours, expected", [(0, 0), (1, 0), (2, 20), (5, 80)])
+def test_fee(hours: int, expected: int) -> None:
+    assert fee(hours) == expected            # plain assert, rich failure diffs
+
+def test_negative() -> None:
+    with pytest.raises(ValueError, match="negative"):
+        fee(-1)
+```
+
+## Docs
+
+- [unittest](https://docs.python.org/3.14/library/unittest.html)
+- [unittest.TestCase assert methods](https://docs.python.org/3.14/library/unittest.html#assert-methods)
+- [TestCase.subTest](https://docs.python.org/3.14/library/unittest.html#distinguishing-test-iterations-using-subtests)
+- [TestCase.addCleanup](https://docs.python.org/3.14/library/unittest.html#unittest.TestCase.addCleanup)
+- [unittest command-line interface](https://docs.python.org/3.14/library/unittest.html#command-line-interface)
+- [unittest.mock](https://docs.python.org/3.14/library/unittest.mock.html)
+- [unittest.mock: where to patch](https://docs.python.org/3.14/library/unittest.mock.html#where-to-patch)
+- [unittest.mock getting started](https://docs.python.org/3.14/library/unittest.mock-examples.html)
+- [pytest documentation](https://docs.pytest.org/en/stable/)
