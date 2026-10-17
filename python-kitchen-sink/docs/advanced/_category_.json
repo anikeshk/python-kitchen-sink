@@ -4,6 +4,6 @@
   "link": {
     "type": "generated-index",
     "slug": "/advanced",
-    "description": "Generators, decorators, context managers, concurrency, datetime, uuid."
+    "description": "Generators, decorators, context managers, concurrency, datetime, uuid, bisect, itertools."
   }
 }
