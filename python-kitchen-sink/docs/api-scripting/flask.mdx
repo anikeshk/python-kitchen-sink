@@ -1,0 +1,256 @@
+---
+title: Flask
+sidebar_position: 11
+---
+
+Flask is a small third-party web framework (`pip install flask`) for building HTTP APIs. You create a `Flask` app, map URLs to view functions with `@app.get`/`@app.post`, read input from `request` (`args`, `get_json()`, `headers`), and return a `dict` or `list`, which Flask turns into a JSON response, optionally with a status code and headers. Per-request overhead is small: a route lookup plus O(n) JSON encoding of the body. Use it for a quick JSON API: a fake server for the scripts in this section, a webhook receiver, or a small internal service. Gotchas: a view must return something (returning `None` is a 500), `request.get_json()` raises 415/400 on a missing or invalid JSON body unless you pass `silent=True`, error pages are HTML until you register a JSON error handler, and `flask run` is a dev server only: deploy behind a WSGI server like Gunicorn.
+
+## Syntax
+
+```python
+# app.py: run with `flask --app app run --debug` -> http://127.0.0.1:5000
+from flask import Flask, request
+
+app = Flask(__name__)
+
+USERS = {1: {"id": 1, "name": "Ada"}, 2: {"id": 2, "name": "Alan"}}
+
+
+@app.get("/users")
+def list_users():
+    return list(USERS.values())               # list or dict -> JSON, status 200
+
+
+@app.get("/users/<int:uid>")
+def get_user(uid: int):                       # <int:...> converts; /users/abc -> 404
+    user = USERS.get(uid)
+    if user is None:
+        return {"error": "user not found"}, 404     # (body, status)
+    return user
+
+
+@app.post("/users")
+def create_user():
+    body = request.get_json(silent=True) or {}      # None on missing/invalid JSON
+    name = body.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return {"error": "name is required"}, 400
+    uid = max(USERS, default=0) + 1
+    USERS[uid] = {"id": uid, "name": name.strip()}
+    return USERS[uid], 201, {"Location": f"/users/{uid}"}   # (body, status, headers)
+
+
+if __name__ == "__main__":
+    app.run(port=5000, debug=True)            # or: python app.py
+```
+
+Call it from another terminal:
+
+```python
+import requests
+
+r = requests.post("http://127.0.0.1:5000/users", json={"name": " Grace "}, timeout=5)
+r.status_code, r.json()                       # -> (201, {'id': 3, 'name': 'Grace'})
+r.headers["Location"]                         # -> '/users/3'
+requests.get("http://127.0.0.1:5000/users/9", timeout=5).status_code   # -> 404
+```
+
+### Routes, methods and URL converters
+
+```python
+from flask import Flask, request
+
+app = Flask(__name__)
+
+
+@app.route("/items", methods=["GET", "POST"])   # one view for several methods
+def items():
+    if request.method == "POST":
+        return {"created": True}, 201
+    return {"items": []}
+
+
+@app.get("/files/<path:name>")       # path: matches slashes -> name = "a/b.txt"
+def get_file(name: str):
+    return {"name": name}
+
+
+@app.delete("/items/<int:item_id>")  # also @app.put and @app.patch
+def delete_item(item_id: int):
+    return "", 204                   # empty body
+
+
+# Converters: <name> (string, no slashes), <int:n>, <float:x>, <path:p>, <uuid:u>
+# A route ending in "/" (e.g. "/users/") also answers "/users" with a 308 redirect.
+# A method the route doesn't allow -> 405 Method Not Allowed.
+```
+
+### Reading the request
+
+```python
+from flask import Flask, request
+
+app = Flask(__name__)
+
+
+@app.post("/search")
+def search():
+    page = request.args.get("page", 1, type=int)     # ?page=2 -> 2; ?page=x -> 1 (default)
+    tags = request.args.getlist("tag")                # ?tag=a&tag=b -> ['a', 'b']
+    token = request.headers.get("Authorization", "")  # header names are case-insensitive
+    body = request.get_json(silent=True)              # parsed JSON, or None
+    return {"page": page, "tags": tags, "has_token": bool(token), "body": body}
+
+# Without silent=True, get_json() aborts with 415 (Content-Type isn't JSON)
+# or 400 (body isn't valid JSON).
+# Other inputs: request.form (HTML forms), request.files (uploads),
+# request.get_data() (raw bytes, e.g. to verify a webhook signature).
+```
+
+### JSON errors with abort and errorhandler
+
+By default `abort(404)` and unknown routes return an HTML page. Register a handler for `HTTPException` so every error is JSON:
+
+```python
+from flask import Flask, abort
+from werkzeug.exceptions import HTTPException
+
+app = Flask(__name__)
+
+
+@app.errorhandler(HTTPException)
+def json_error(e: HTTPException):
+    return {"error": e.name, "detail": e.description}, e.code
+
+
+@app.get("/orders/<oid>")
+def get_order(oid: str):
+    abort(404, description=f"order {oid} not found")   # raises; nothing after it runs
+
+# GET /orders/o9 -> 404 {"error": "Not Found", "detail": "order o9 not found"}
+# GET /nope      -> 404 JSON too (the handler covers unknown routes)
+# Uncaught exceptions are not HTTPExceptions: they become a 500 (or the debugger
+# page with --debug). Add @app.errorhandler(Exception) for a JSON 500.
+```
+
+### Bearer-token auth decorator
+
+```python
+import hmac
+import os
+from functools import wraps
+
+from flask import Flask, abort, request
+
+app = Flask(__name__)
+TOKEN = os.environ.get("API_TOKEN", "secret-token")
+
+
+def require_token(view):
+    @wraps(view)       # keeps view.__name__, which Flask uses as the endpoint name
+    def wrapper(*args, **kwargs):
+        auth = request.headers.get("Authorization", "")
+        if not hmac.compare_digest(auth.encode(), f"Bearer {TOKEN}".encode()):
+            abort(401)                       # constant-time compare, bytes for non-ASCII
+        return view(*args, **kwargs)
+    return wrapper
+
+
+@app.get("/me")
+@require_token         # goes below the route decorator
+def me():
+    return {"user": "ada"}
+
+# Without @wraps, every decorated view is named "wrapper" and the second
+# route fails with "View function mapping is overwriting an existing endpoint".
+```
+
+### Blueprints: group related routes
+
+```python
+from flask import Blueprint, Flask
+
+users = Blueprint("users", __name__, url_prefix="/users")
+
+
+@users.get("/")
+def list_users():
+    return []
+
+
+@users.get("/<int:uid>")
+def get_user(uid: int):
+    return {"id": uid}
+
+
+app = Flask(__name__)
+app.register_blueprint(users)   # -> GET /users/ and GET /users/<uid>
+```
+
+### Testing with test_client
+
+The test client calls the app in-process: no server, no port, no network.
+
+```python
+import unittest
+
+from flask import Flask, request
+
+
+def create_app() -> Flask:              # app factory: a fresh app (and state) per test
+    app = Flask(__name__)
+
+    @app.post("/double")
+    def double():
+        body = request.get_json(silent=True) or {}
+        n = body.get("n")
+        if not isinstance(n, int):
+            return {"error": "n must be an int"}, 400
+        return {"result": n * 2}
+
+    return app
+
+
+class DoubleTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.client = create_app().test_client()
+
+    def test_doubles(self) -> None:
+        r = self.client.post("/double", json={"n": 21})    # json= sets Content-Type
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json(), {"result": 42})
+
+    def test_rejects_bad_input(self) -> None:
+        r = self.client.post("/double", json={"n": "x"})
+        self.assertEqual(r.status_code, 400)
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+### Running it
+
+```python
+# Dev server (auto-reload + debugger), from the folder that holds app.py:
+#   flask --app app run --debug --port 8000
+# Never use --debug or host="0.0.0.0" on a reachable machine: the debugger runs code.
+#
+# Production: a WSGI server in front of the same app object, e.g.
+#   pip install gunicorn
+#   gunicorn -w 4 -b 127.0.0.1:8000 app:app    # module:variable
+```
+
+## Docs
+
+- [Flask: Quickstart](https://flask.palletsprojects.com/en/stable/quickstart/)
+- [flask.Flask.route](https://flask.palletsprojects.com/en/stable/api/#flask.Flask.route)
+- [flask.request](https://flask.palletsprojects.com/en/stable/api/#flask.request)
+- [flask.Request.get_json](https://flask.palletsprojects.com/en/stable/api/#flask.Request.get_json)
+- [flask.abort](https://flask.palletsprojects.com/en/stable/api/#flask.abort)
+- [Flask: Handling Application Errors](https://flask.palletsprojects.com/en/stable/errorhandling/)
+- [Flask: Blueprints](https://flask.palletsprojects.com/en/stable/blueprints/)
+- [Flask: Testing Flask Applications](https://flask.palletsprojects.com/en/stable/testing/)
+- [Flask: Deploying to Production](https://flask.palletsprojects.com/en/stable/deploying/)
+- [functools.wraps](https://docs.python.org/3.14/library/functools.html#functools.wraps)
+- [hmac.compare_digest](https://docs.python.org/3.14/library/hmac.html#hmac.compare_digest)
