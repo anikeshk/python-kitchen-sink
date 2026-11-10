@@ -4,6 +4,6 @@
   "link": {
     "type": "generated-index",
     "slug": "/api-scripting",
-    "description": "HTTP requests, JSON, cleaning and reshaping data, structuring API scripts, and small Flask APIs."
+    "description": "HTTP requests, JSON, cleaning and reshaping data, structuring API scripts, and small Flask and FastAPI servers."
   }
 }

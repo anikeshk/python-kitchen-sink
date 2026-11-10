@@ -1,0 +1,366 @@
+---
+title: FastAPI
+sidebar_position: 12
+---
+
+FastAPI is a third-party web framework (`pip install "fastapi[standard]"`) for JSON APIs, built on Starlette and Pydantic. Type hints do the work: a function parameter that appears in the path is a path param, a plain `int`/`str` parameter is a query param, and a Pydantic model parameter is the JSON body. FastAPI parses and validates all of them, returns **422** with field-level errors when input is wrong, serialises whatever you return to JSON, and generates interactive docs at `/docs`. Per-request overhead is a route lookup plus O(n) validation and encoding of the body. Compared with [Flask](/api-scripting/flask), you get validation, typed responses and OpenAPI for free, plus native `async`. Gotchas: bad input is 422, not 400; the default status is 200 even for a POST (set `status_code=201`); errors come back as `{"detail": ...}`; routes match in order, so declare `/users/me` before `/users/{uid}`; and never call blocking code (`requests`, `time.sleep`) inside an `async def` endpoint.
+
+## Syntax
+
+```python
+# app.py: run with `fastapi dev app.py` -> http://127.0.0.1:8000, docs at /docs
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+
+app = FastAPI()
+
+
+class UserIn(BaseModel):          # request body schema
+    name: str
+    email: str | None = None
+
+
+class User(UserIn):               # response schema
+    id: int
+
+
+USERS: dict[int, User] = {1: User(id=1, name="Ada"), 2: User(id=2, name="Alan")}
+
+
+@app.get("/users")
+def list_users() -> list[User]:   # return type = response schema (validated + documented)
+    return list(USERS.values())
+
+
+@app.get("/users/{uid}")
+def get_user(uid: int) -> User:   # /users/abc -> 422, the path param must be an int
+    if uid not in USERS:
+        raise HTTPException(status_code=404, detail="user not found")
+    return USERS[uid]
+
+
+@app.post("/users", status_code=201)
+def create_user(body: UserIn) -> User:   # body parsed from JSON and validated
+    uid = max(USERS, default=0) + 1
+    USERS[uid] = User(id=uid, **body.model_dump())
+    return USERS[uid]
+```
+
+Call it from another terminal:
+
+```python
+import requests
+
+base = "http://127.0.0.1:8000"
+r = requests.post(f"{base}/users", json={"name": "Grace"}, timeout=5)
+r.status_code, r.json()   # -> (201, {'name': 'Grace', 'email': None, 'id': 3})
+
+r = requests.get(f"{base}/users/9", timeout=5)
+r.status_code, r.json()   # -> (404, {'detail': 'user not found'})
+
+r = requests.post(f"{base}/users", json={"email": "x@example.com"}, timeout=5)
+r.status_code             # -> 422
+r.json()["detail"][0]["loc"], r.json()["detail"][0]["msg"]
+                          # -> (['body', 'name'], 'Field required')
+```
+
+### Path and query parameters
+
+```python
+from typing import Annotated
+
+from fastapi import FastAPI, Query
+
+app = FastAPI()
+
+
+@app.get("/users/me")                 # declare before /users/{uid}, or "me" hits that route
+def me() -> dict:
+    return {"id": 1}
+
+
+@app.get("/users/{uid}")
+def get_user(uid: int) -> dict:       # in the path -> path param, converted to int
+    return {"id": uid}
+
+
+@app.get("/search")
+def search(
+    q: str,                                            # required: missing -> 422
+    page: Annotated[int, Query(ge=1)] = 1,             # ?page=0 -> 422
+    per_page: Annotated[int, Query(ge=1, le=100)] = 20,
+    tag: Annotated[list[str] | None, Query()] = None,  # ?tag=a&tag=b -> ['a', 'b']
+    active: bool | None = None,                        # ?active=true / 1 / yes -> True
+) -> dict:
+    return {"q": q, "page": page, "per_page": per_page, "tag": tag, "active": active}
+
+# GET /search?q=py&page=2&tag=a&tag=b
+#   -> {'q': 'py', 'page': 2, 'per_page': 20, 'tag': ['a', 'b'], 'active': None}
+```
+
+### Request bodies with Pydantic
+
+```python
+from fastapi import FastAPI
+from pydantic import BaseModel, Field, field_validator
+
+app = FastAPI()
+
+
+class Address(BaseModel):
+    city: str
+    zip: str | None = None
+
+
+class UserIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    age: int = Field(ge=0)
+    tags: list[str] = []                 # mutable default is safe: Pydantic copies it
+    address: Address | None = None       # nested objects are validated too
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, v: str) -> str:
+        return v.strip()
+
+
+@app.post("/users", status_code=201)
+def create_user(body: UserIn) -> dict:
+    return body.model_dump()             # model -> plain dict
+
+# {"name": " Ada ", "age": "36"}    -> 201 {'name': 'Ada', 'age': 36, 'tags': [], 'address': None}
+#   ("36" is coerced to 36 in the default lax mode)
+# {"name": "Ada", "age": -1}        -> 422 'Input should be greater than or equal to 0'
+# {"name": "Ada", "age": 1, "address": {}} -> 422, loc ['body', 'address', 'city']
+# Unknown fields are ignored by default; set model_config = ConfigDict(extra="forbid") to 422.
+```
+
+### Responses and status codes
+
+```python
+from fastapi import FastAPI, Response
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel
+
+app = FastAPI()
+
+
+class UserOut(BaseModel):
+    id: int
+    name: str
+
+
+@app.get("/users/{uid}", response_model=UserOut)   # filters the output to UserOut's fields
+def get_user(uid: int) -> dict:
+    return {"id": uid, "name": "Ada", "password_hash": "x"}   # password_hash is dropped
+
+
+@app.delete("/users/{uid}", status_code=204)
+def delete_user(uid: int) -> Response:
+    return Response(status_code=204)                # no body
+
+
+@app.post("/jobs")
+def start_job(response: Response) -> dict:
+    response.status_code = 202                      # set status/headers per request
+    response.headers["Location"] = "/jobs/1"
+    return {"id": 1, "state": "queued"}
+
+
+@app.get("/legacy")
+def legacy() -> JSONResponse:
+    return JSONResponse({"ok": True}, status_code=200, headers={"X-Version": "1"})
+```
+
+### Errors: HTTPException and custom handlers
+
+```python
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
+
+app = FastAPI()
+
+
+class OutOfStock(Exception):
+    def __init__(self, sku: str) -> None:
+        self.sku = sku
+
+
+@app.exception_handler(OutOfStock)       # map a domain exception to a response
+def out_of_stock(request: Request, exc: OutOfStock) -> JSONResponse:
+    return JSONResponse({"error": "out_of_stock", "sku": exc.sku}, status_code=409)
+
+
+@app.post("/orders/{sku}")
+def order(sku: str) -> dict:
+    if sku == "gone":
+        raise OutOfStock(sku)
+    if not sku.isalnum():
+        raise HTTPException(400, detail="bad sku", headers={"X-Error": "sku"})
+    return {"sku": sku}
+
+# POST /orders/gone -> 409 {'error': 'out_of_stock', 'sku': 'gone'}
+# POST /orders/a-b  -> 400 {'detail': 'bad sku'}
+# GET  /nope        -> 404 {'detail': 'Not Found'} (JSON by default, unlike Flask)
+```
+
+### Dependencies: auth and shared setup
+
+`Depends` runs a function before the endpoint and passes in its result. It's the standard place for auth, DB sessions and settings, and tests can swap it out.
+
+```python
+import hmac
+import os
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, Header, HTTPException
+
+app = FastAPI()
+TOKEN = os.environ.get("API_TOKEN", "secret-token")
+
+
+def require_token(authorization: Annotated[str, Header()] = "") -> str:
+    if not hmac.compare_digest(authorization.encode(), f"Bearer {TOKEN}".encode()):
+        raise HTTPException(401, detail="unauthorized",
+                            headers={"WWW-Authenticate": "Bearer"})
+    return "ada"                        # e.g. the user the token belongs to
+
+
+CurrentUser = Annotated[str, Depends(require_token)]   # reusable alias
+
+
+@app.get("/me")
+def me(user: CurrentUser) -> dict:
+    return {"user": user}
+
+
+@app.get("/admin/stats", dependencies=[Depends(require_token)])   # check only, no value
+def stats() -> dict:
+    return {"users": 2}
+
+# Header() maps the `authorization` parameter to the Authorization header;
+# underscores become hyphens, so x_request_id reads X-Request-Id.
+```
+
+### async def vs def
+
+```python
+import asyncio
+import time
+
+from fastapi import FastAPI
+
+app = FastAPI()
+
+
+@app.get("/sync")
+def sync_endpoint() -> dict:
+    time.sleep(0.1)            # fine: plain `def` runs in a threadpool
+    return {"ok": True}
+
+
+@app.get("/async")
+async def async_endpoint() -> dict:
+    await asyncio.sleep(0.1)   # only await non-blocking calls here (httpx.AsyncClient, asyncpg)
+    return {"ok": True}
+
+# Rule of thumb: use `def` unless every slow call inside can be awaited.
+# time.sleep or requests.get inside `async def` blocks the event loop for every request.
+```
+
+### APIRouter: group related routes
+
+```python
+from fastapi import APIRouter, FastAPI
+
+router = APIRouter(prefix="/users", tags=["users"])   # tags group routes in /docs
+
+
+@router.get("")
+def list_users() -> list[dict]:
+    return []
+
+
+@router.get("/{uid}")
+def get_user(uid: int) -> dict:
+    return {"id": uid}
+
+
+app = FastAPI()
+app.include_router(router)   # -> GET /users and GET /users/{uid}
+```
+
+### Testing with TestClient
+
+`TestClient` calls the app in-process (it needs `httpx`, included in `fastapi[standard]`). `app.dependency_overrides` swaps a dependency, e.g. to skip real auth.
+
+```python
+import unittest
+
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.testclient import TestClient
+
+
+def require_token() -> str:
+    raise HTTPException(401)            # stands in for real auth
+
+
+app = FastAPI()
+
+
+@app.get("/me")
+def me(user: str = Depends(require_token)) -> dict:
+    return {"user": user}
+
+
+class MeTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.client = TestClient(app)
+
+    def tearDown(self) -> None:
+        app.dependency_overrides.clear()
+
+    def test_requires_auth(self) -> None:
+        self.assertEqual(self.client.get("/me").status_code, 401)
+
+    def test_with_fake_user(self) -> None:
+        app.dependency_overrides[require_token] = lambda: "test-user"
+        r = self.client.get("/me")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json(), {"user": "test-user"})
+
+
+if __name__ == "__main__":
+    unittest.main()
+```
+
+### Running it
+
+```python
+# pip install "fastapi[standard]"      # includes uvicorn, httpx and the fastapi CLI
+#
+# fastapi dev app.py                   # dev server with auto-reload, 127.0.0.1:8000
+# fastapi run app.py                   # production mode, listens on 0.0.0.0:8000
+# uvicorn app:app --reload --port 8000 # same thing via uvicorn directly (module:variable)
+#
+# http://127.0.0.1:8000/docs           # interactive Swagger UI, try requests in the browser
+# http://127.0.0.1:8000/openapi.json   # the generated OpenAPI schema
+```
+
+## Docs
+
+- [FastAPI: First Steps](https://fastapi.tiangolo.com/tutorial/first-steps/)
+- [FastAPI: Path Parameters](https://fastapi.tiangolo.com/tutorial/path-params/)
+- [FastAPI: Query Parameters and String Validations](https://fastapi.tiangolo.com/tutorial/query-params-str-validations/)
+- [FastAPI: Request Body](https://fastapi.tiangolo.com/tutorial/body/)
+- [FastAPI: Response Model](https://fastapi.tiangolo.com/tutorial/response-model/)
+- [FastAPI: Handling Errors](https://fastapi.tiangolo.com/tutorial/handling-errors/)
+- [FastAPI: Dependencies](https://fastapi.tiangolo.com/tutorial/dependencies/)
+- [FastAPI: Concurrency and async / await](https://fastapi.tiangolo.com/async/)
+- [FastAPI: Bigger Applications (APIRouter)](https://fastapi.tiangolo.com/tutorial/bigger-applications/)
+- [FastAPI: Testing](https://fastapi.tiangolo.com/tutorial/testing/)
+- [FastAPI: Testing Dependencies with Overrides](https://fastapi.tiangolo.com/advanced/testing-dependencies/)
+- [Pydantic: Models](https://docs.pydantic.dev/latest/concepts/models/)
+- [Pydantic: Validators](https://docs.pydantic.dev/latest/concepts/validators/)
+- [typing.Annotated](https://docs.python.org/3.14/library/typing.html#typing.Annotated)
+- [hmac.compare_digest](https://docs.python.org/3.14/library/hmac.html#hmac.compare_digest)
