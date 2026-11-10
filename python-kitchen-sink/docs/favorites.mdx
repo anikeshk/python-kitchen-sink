@@ -1,0 +1,90 @@
+---
+title: Favorites
+sidebar_position: 0.5
+---
+
+Hand-picked shortlists of pages grouped by task. Each list links to pages elsewhere on the site, ordered roughly by what to read first.
+
+## API scripting
+
+For scripts that call an HTTP API (GET/POST, status codes), parse and build JSON, clean, filter, map and reshape records, then post updates back, all in clear, well-structured code that's easy to adapt when requirements change. Clarity and organization matter more than algorithmic optimization.
+
+### HTTP & JSON
+
+1. [Structuring an API script](/api-scripting/script-structure): the layout and a full worked example. Start here.
+2. [requests](/api-scripting/requests): GET/POST, params, `json=`, headers, timeouts, errors, `Session`.
+3. [urllib.request](/api-scripting/urllib-request): stdlib fallback if `requests` isn't installed.
+4. [HTTP status codes](/api-scripting/status-codes): what each code means and how to react.
+5. [json](/api-scripting/json): `loads`/`dumps`, pretty-printing, `default=` for dates and dataclasses.
+6. [Accessing nested JSON](/api-scripting/nested-json-access): `.get` chains, the `null` trap, `match` on payloads.
+7. [Cleaning & transforming data](/api-scripting/cleaning-transforming): filter, normalize, coerce, dedupe, group, join, diff.
+8. [Pagination, retries & batching](/api-scripting/pagination-retries-batching): generators, backoff, `batched`, thread pools.
+9. [Secure API scripting](/api-scripting/secure-api-practices): secrets, TLS, injection, SSRF, redirects, HMAC, safe writes.
+10. [Mock API server](/api-scripting/mock-api-server): a local fake API to practice against, plus `unittest.mock`.
+
+### Reshaping data
+
+- [dict](/data-structures/dict): `get`, `setdefault`, `|` merge, views, comprehensions.
+- [list](/data-structures/list): slicing, `append`/`extend`, sorting in place.
+- [str](/data-structures/str): `strip`, `split`/`join`, `lower`/`casefold`, `replace`.
+- [String formatting](/data-structures/string-formatting): f-strings for log lines and URLs.
+- [Comprehensions](/basics/comprehensions): list, dict and set comprehensions for filter + map.
+- [Unpacking](/basics/unpacking): `**` dict merging, `*rest`, tuple unpacking in loops.
+- [sorted and sort](/builtins/sorted-and-sort): multi-key sorts with `key=` and `reverse=`.
+- [map and filter](/builtins/map-filter)
+- [any and all](/builtins/any-all): validation checks across records.
+- [Conversions](/builtins/conversions): `int`, `float`, `str`, `bool` coercion.
+- [defaultdict](/collections/defaultdict): group records by key.
+- [Counter](/collections/counter): count by status or category, `most_common`.
+- [groupby](/advanced/itertools/groupby): group consecutive records (sort first).
+- [pairwise and batched](/advanced/itertools/pairwise-batched): chunk updates for bulk POSTs.
+- [reduce](/functools/reduce)
+
+### Clean, structured scripts
+
+- [Functions](/basics/functions): keyword-only args, defaults, `*args`/`**kwargs`.
+- [Exceptions](/basics/exceptions): `try`/`except`/`else`/`finally`, `raise ... from`.
+- [match statement](/basics/match-statement): branch on status codes and payload shapes.
+- [Dataclasses](/oop/dataclasses): typed records with `from_api`/`to_payload`.
+- [Type hints](/oop/type-hints): `list[dict]`, `X | None`, `TypedDict`.
+- [Custom exceptions](/oop/custom-exceptions): an `ApiError` carrying the status code.
+- [Classes and objects](/oop/classes-and-objects): a small API client class.
+- [Unit testing](/oop/unit-testing): testing pure transform functions.
+
+### Extras worth a skim
+
+- [Iterators and generators](/advanced/iterators-generators): lazy pagination with `yield`.
+- [Decorators](/advanced/decorators): a `@retry` wrapper.
+- [Context managers](/advanced/context-managers): `with requests.Session()`, files.
+- [concurrent.futures](/advanced/concurrent-futures): parallel GETs with `ThreadPoolExecutor`.
+- [datetime and time](/advanced/datetime-time): ISO timestamps, `fromisoformat`, `time.sleep` for backoff.
+- [partial](/functools/partial): pre-bind arguments (base URL, headers).
+
+### Checklist
+
+- Pin down the task and the payload shapes; check auth, pagination and rate limits.
+- Make one request first and print it: status code, then `json.dumps(r.json(), indent=2)`.
+- Check `import requests` works; if not, switch to `urllib.request` with a small helper.
+- Keep fetch, transform and post in separate functions; constants at the top; a `main()`.
+- Always pass `timeout=`; check the status before calling `.json()`; handle 204 (no body).
+- Use `.get()` for optional fields and `d.get("x") or {}` for nullable nested objects.
+- POST one record and check the response before looping over all of them.
+- Don't let one bad record crash the run: log it, count failures, keep going.
+- Think about retries, idempotency, batching and parallelism, even if you don't build them yet.
+
+### Security habits
+
+- Token from `os.environ`, sent in a header, never printed or logged; fail fast if it's missing.
+- HTTPS with verification on; timeouts, retry caps, page caps and response-size caps.
+- Validate every response field (type, shape, allowlisted values) before using it.
+- Build URLs with `params=` and `quote(..., safe="")`; log untrusted values with `%r`.
+- No auth on redirects to other hosts (`allow_redirects=False`); allowlist hosts for URLs from data.
+- POST only allowlisted fields; dry run by default with an `--apply` flag and a change limit.
+
+## Docs
+
+- [json](https://docs.python.org/3.14/library/json.html)
+- [urllib.request](https://docs.python.org/3.14/library/urllib.request.html)
+- [urllib.parse](https://docs.python.org/3.14/library/urllib.parse.html)
+- [http.HTTPStatus](https://docs.python.org/3.14/library/http.html#http.HTTPStatus)
+- [requests: Quickstart](https://requests.readthedocs.io/en/latest/user/quickstart/)

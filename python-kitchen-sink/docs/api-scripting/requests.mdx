@@ -1,0 +1,185 @@
+---
+title: requests
+sidebar_position: 2
+---
+
+`requests` is the de facto HTTP client for Python scripts. It's third-party (`pip install requests`), but most coding platforms preinstall it; if `import requests` fails, fall back to the stdlib [urllib.request](/api-scripting/urllib-request). One call does a request: `requests.get(url, params=...)` or `requests.post(url, json=...)`, and you read `r.status_code`, `r.json()` and `r.headers` from the `Response`. Good habits: always pass `timeout=`, check the status before parsing, and use a `Session` when you hit the same API many times (it reuses connections and shared headers). Snippets below run against the local [mock API server](/api-scripting/mock-api-server).
+
+## Syntax
+
+```python
+import requests
+
+BASE_URL = "http://localhost:8000"
+
+r = requests.get(f"{BASE_URL}/users/1", timeout=5)
+r.status_code              # -> 200
+r.ok                       # -> True (status < 400)
+r.headers["Content-Type"]  # -> 'application/json' (case-insensitive dict)
+user = r.json()            # parse body -> dict
+user["name"]               # -> ' Ada Lovelace '
+```
+
+### Query parameters: params=
+
+```python
+import requests
+
+BASE_URL = "http://localhost:8000"
+
+r = requests.get(f"{BASE_URL}/users", params={"page": 2, "per_page": 2}, timeout=5)
+r.url                                   # -> 'http://localhost:8000/users?page=2&per_page=2'
+[u["id"] for u in r.json()["data"]]     # -> [3, 4]
+# params values are URL-encoded for you; a list value repeats the key: {"id": [1, 2]} -> ?id=1&id=2
+```
+
+### POST a JSON body: json= vs data=
+
+```python
+import requests
+
+BASE_URL = "http://localhost:8000"
+
+payload = {"total_spent": 24.99, "order_count": 2}
+r = requests.post(f"{BASE_URL}/users/1/summary", json=payload, timeout=5)
+r.status_code   # -> 201 (Created)
+r.json()        # -> {'id': 1, 'user_id': 1, 'total_spent': 24.99, 'order_count': 2}
+
+# json=payload  -> serializes with json.dumps and sets Content-Type: application/json
+# data=payload  -> form-encodes (total_spent=24.99&order_count=2); NOT JSON
+# data=json.dumps(payload) also works but you must set the Content-Type header yourself
+```
+
+### PUT, PATCH, DELETE
+
+```python
+import requests
+
+BASE_URL = "http://localhost:8000"
+
+requests.put(f"{BASE_URL}/echo", json={"name": "Ada"}, timeout=5).json()["method"]     # -> 'PUT'
+requests.patch(f"{BASE_URL}/echo", json={"status": "x"}, timeout=5).json()["method"]   # -> 'PATCH'
+requests.delete(f"{BASE_URL}/echo", timeout=5).json()["method"]                        # -> 'DELETE'
+# PUT replaces the whole resource, PATCH updates some fields, DELETE removes it
+```
+
+### Headers and auth tokens
+
+```python
+import requests
+
+BASE_URL = "http://localhost:8000"
+TOKEN = "secret-token"   # in real scripts: os.environ["API_TOKEN"]
+
+requests.get(f"{BASE_URL}/me", timeout=5).status_code   # -> 401 (Unauthorized)
+
+headers = {"Authorization": f"Bearer {TOKEN}", "Accept": "application/json"}
+r = requests.get(f"{BASE_URL}/me", headers=headers, timeout=5)
+r.status_code, r.json()   # -> (200, {'user_id': 1, 'name': 'Ada Lovelace'})
+# Other common schemes: headers={"X-API-Key": key}, or auth=("user", "pass") for HTTP Basic
+```
+
+### Check the status before parsing
+
+```python
+import requests
+
+BASE_URL = "http://localhost:8000"
+
+r = requests.get(f"{BASE_URL}/users/99", timeout=5)
+r.status_code   # -> 404
+r.json()        # -> {'error': 'user not found'}  (error bodies are often JSON too)
+
+try:
+    r.raise_for_status()   # raises HTTPError for 4xx/5xx, does nothing for 2xx/3xx
+except requests.HTTPError as e:
+    print(e)   # 404 Client Error: Not Found for url: http://localhost:8000/users/99
+```
+
+### Handle network errors
+
+```python
+import requests
+
+def get_json(url: str) -> dict | None:
+    try:
+        r = requests.get(url, timeout=5)
+        r.raise_for_status()
+        return r.json()
+    except requests.Timeout:             # server too slow (connect or read)
+        print("timed out:", url)
+    except requests.ConnectionError:     # DNS failure, refused connection...
+        print("cannot connect:", url)
+    except requests.HTTPError as e:      # 4xx / 5xx from raise_for_status()
+        print("HTTP", e.response.status_code, e.response.text)
+    except requests.JSONDecodeError:     # 2xx but the body isn't JSON
+        print("not JSON:", url)
+    return None
+# All of these subclass requests.RequestException: catch that to handle any requests error
+
+get_json("http://localhost:8000/users/1")["id"]   # -> 1
+get_json("http://localhost:8000/users/99")        # prints: HTTP 404 {"error": "user not found"}
+get_json("http://localhost:1/users")              # prints: cannot connect: http://localhost:1/users
+```
+
+### Response attributes
+
+```python
+import requests
+
+r = requests.get("http://localhost:8000/users/1", timeout=5)
+r.status_code       # -> 200
+r.reason            # -> 'OK'
+r.text              # body as str (decoded)
+r.content           # body as bytes
+r.json()            # body parsed as JSON (raises requests.JSONDecodeError if not JSON)
+r.headers           # response headers, case-insensitive
+r.url               # final URL (after redirects and params)
+r.elapsed.total_seconds()   # round-trip time
+r.request.method, r.request.headers   # what was actually sent
+```
+
+### Status 204: no body
+
+```python
+import requests
+
+r = requests.delete("http://localhost:8000/status/204", timeout=5)
+r.status_code, r.text   # -> (204, '')
+data = r.json() if r.content else None   # r.json() on an empty body raises
+```
+
+### Session: shared headers and connection reuse
+
+```python
+import requests
+
+BASE_URL = "http://localhost:8000"
+
+with requests.Session() as s:
+    s.headers.update({"Authorization": "Bearer secret-token"})   # sent on every request
+    s.get(f"{BASE_URL}/me", timeout=5).json()["user_id"]          # -> 1
+    s.post(f"{BASE_URL}/echo", json={"a": 1}, timeout=5).json()["authorization"]
+    # -> 'Bearer secret-token'
+# Faster than separate requests.get calls when making many requests to one host
+```
+
+### timeout
+
+```python
+import requests
+
+requests.get("http://localhost:8000/users", timeout=5)         # 5 s to connect AND 5 s per read
+requests.get("http://localhost:8000/users", timeout=(3, 10))   # (connect, read)
+# Without timeout= a request can hang forever: always set it
+```
+
+## Docs
+
+- [requests: Quickstart](https://requests.readthedocs.io/en/latest/user/quickstart/)
+- [requests: Passing parameters in URLs](https://requests.readthedocs.io/en/latest/user/quickstart/#passing-parameters-in-urls)
+- [requests: More complicated POST requests (json=)](https://requests.readthedocs.io/en/latest/user/quickstart/#more-complicated-post-requests)
+- [requests: Errors and exceptions](https://requests.readthedocs.io/en/latest/user/quickstart/#errors-and-exceptions)
+- [requests: Timeouts](https://requests.readthedocs.io/en/latest/user/advanced/#timeouts)
+- [requests: Session objects](https://requests.readthedocs.io/en/latest/user/advanced/#session-objects)
+- [requests.Response](https://requests.readthedocs.io/en/latest/api/#requests.Response)

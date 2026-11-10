@@ -1,0 +1,117 @@
+---
+title: HTTP status codes
+sidebar_position: 4
+---
+
+Every HTTP response has a 3-digit status code: **2xx** success, **3xx** redirect, **4xx** your request is wrong (fix it, don't retry), **5xx** the server failed (often worth retrying). `http.HTTPStatus` is a stdlib `IntEnum` of all codes, so you can write `HTTPStatus.NOT_FOUND` instead of a magic `404` and compare it straight against `r.status_code`. Decide up front how you handle each class: parse on 2xx, skip or log on 404, stop on 401/403, retry with backoff on 429 and 5xx.
+
+## Syntax
+
+```python
+from http import HTTPStatus
+
+HTTPStatus.OK                   # -> <HTTPStatus.OK: 200>
+HTTPStatus.CREATED == 201       # -> True (IntEnum compares with int)
+HTTPStatus(404).phrase          # -> 'Not Found'
+HTTPStatus(429).name            # -> 'TOO_MANY_REQUESTS'
+HTTPStatus(503).is_server_error # -> True (3.12+: is_success, is_client_error, ...)
+```
+
+### Common codes
+
+| Code | Name | Meaning | What your script should do |
+| --- | --- | --- | --- |
+| 200 | OK | Success, body has the result | Parse `r.json()` |
+| 201 | Created | POST created a resource | Parse the body for the new id |
+| 204 | No Content | Success, empty body (DELETE, some PUT) | Don't call `r.json()` |
+| 301 / 302 / 307 / 308 | Redirect | Resource moved | `requests` follows redirects for you |
+| 304 | Not Modified | Cached copy still valid | Use your cached data |
+| 400 | Bad Request | Malformed request or invalid JSON | Fix the payload; don't retry |
+| 401 | Unauthorized | Missing or bad credentials | Check the token / `Authorization` header |
+| 403 | Forbidden | Authenticated but not allowed | Stop; retrying won't help |
+| 404 | Not Found | No such resource | Skip the record, log it, or treat as "absent" |
+| 405 | Method Not Allowed | Wrong verb for this endpoint | GET vs POST mix-up |
+| 409 | Conflict | Clashes with current state (duplicate, version mismatch) | Re-fetch, then decide |
+| 422 | Unprocessable Content | Valid JSON, but fails validation | Read the error body, fix the fields |
+| 429 | Too Many Requests | Rate limited | Wait (`Retry-After` header), then retry |
+| 500 | Internal Server Error | Server bug | Retry a few times, then give up |
+| 502 / 503 / 504 | Bad Gateway / Unavailable / Timeout | Server temporarily down or overloaded | Retry with backoff |
+
+### Branch on the status class
+
+```python
+import requests
+
+def fetch_user(user_id: int) -> dict | None:
+    r = requests.get(f"http://localhost:8000/users/{user_id}", timeout=5)
+    if r.status_code == 200:
+        return r.json()
+    if r.status_code == 404:
+        return None                        # missing is a normal outcome, not an error
+    r.raise_for_status()                   # anything else 4xx/5xx -> HTTPError
+    raise RuntimeError(f"unexpected status {r.status_code}")   # e.g. an unexpected 3xx
+
+fetch_user(1)["id"]   # -> 1
+fetch_user(99)        # -> None
+```
+
+### match on status (3.10+)
+
+```python
+from http import HTTPStatus
+import requests
+
+RETRYABLE = {429, 500, 502, 503, 504}
+
+def classify(r: requests.Response) -> str:
+    match r.status_code:
+        case HTTPStatus.OK | HTTPStatus.CREATED:
+            return "ok"
+        case HTTPStatus.NO_CONTENT:
+            return "ok-empty"
+        case HTTPStatus.NOT_FOUND:
+            return "skip"
+        case HTTPStatus.UNAUTHORIZED | HTTPStatus.FORBIDDEN:
+            return "auth-error"
+        case code if code in RETRYABLE:
+            return "retry"
+        case code if 400 <= code < 500:
+            return "client-error"
+        case _:
+            return "server-error"
+
+[classify(requests.get(f"http://localhost:8000/status/{c}", timeout=5))
+ for c in (200, 204, 404, 401, 422, 503)]
+# -> ['ok', 'ok-empty', 'skip', 'auth-error', 'client-error', 'retry']
+```
+
+### Reading the error body
+
+```python
+import requests
+
+r = requests.post("http://localhost:8000/users/1/summary", json={"wrong": 1}, timeout=5)
+if not r.ok:
+    try:
+        detail = r.json()          # most APIs return a JSON error object
+    except requests.JSONDecodeError:
+        detail = r.text            # fall back to raw text (HTML error page, etc.)
+    print(r.status_code, detail)   # 422 {'error': 'total_spent is required'}
+```
+
+### Idempotency: which requests are safe to retry
+
+```python
+# GET, PUT, DELETE, HEAD are idempotent: repeating them leaves the same end state.
+# POST (and usually PATCH) is not: retrying a POST after a timeout can create a duplicate.
+# Safe options for POST: retry only on 429/503 (request was rejected, not processed),
+# or send an idempotency key header that the API dedupes on, e.g.
+#   requests.post(url, json=body, headers={"Idempotency-Key": str(uuid.uuid4())})
+```
+
+## Docs
+
+- [http.HTTPStatus](https://docs.python.org/3.14/library/http.html#http.HTTPStatus)
+- [HTTP status category properties (is_success, ...)](https://docs.python.org/3.14/library/http.html#http-status-category)
+- [http module (all codes and their RFCs)](https://docs.python.org/3.14/library/http.html)
+- [match statement](https://docs.python.org/3.14/reference/compound_stmts.html#the-match-statement)

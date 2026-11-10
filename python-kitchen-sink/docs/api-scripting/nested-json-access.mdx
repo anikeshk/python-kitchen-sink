@@ -1,0 +1,171 @@
+---
+title: Accessing nested JSON
+sidebar_position: 5
+---
+
+A parsed response is just nested `dict`s and `list`s, but real payloads are messy: keys go missing, values are `null`, and a field that's usually an object is sometimes absent. Use `d["key"]` when the field **must** exist (a `KeyError` is a useful, loud failure) and `d.get("key", default)` when it's optional. Watch for the `null` trap: `.get("address", {})` still returns `None` if the key exists with value `null`, so use `d.get("address") or {}`. Before writing any transform, print one record (`json.dumps(rec, indent=2)`) to see the real shape. Examples use this payload, shaped like the [mock API's](/api-scripting/mock-api-server) `/users` response:
+
+## Syntax
+
+```python
+resp = {
+    "data": [
+        {"id": 1, "name": "Ada", "address": {"city": "London", "zip": "N1"}, "tags": ["admin", "beta"]},
+        {"id": 3, "name": "Grace", "address": None, "tags": ["beta"]},
+        {"id": 4, "name": "Linus", "tags": []},
+    ],
+    "page": 1,
+    "total_pages": 3,
+}
+
+users = resp["data"]            # required: fail loudly if missing
+users[0]["address"]["city"]     # -> 'London'
+users[0]["tags"][0]             # -> 'admin'
+resp.get("next_cursor")         # -> None (optional key)
+len(users), resp["total_pages"] # -> (3, 3)
+```
+
+### Optional nested fields: get with defaults
+
+```python
+user = {"id": 3, "name": "Grace", "address": None}
+
+user.get("email", "unknown")                # -> 'unknown' (key missing)
+# user.get("address", {}).get("city")       # AttributeError: key exists with value None!
+(user.get("address") or {}).get("city")     # -> None  (handles missing AND null)
+(user.get("address") or {}).get("city", "N/A")   # -> 'N/A'
+```
+
+### A dig helper for deep paths
+
+```python
+from typing import Any
+
+def dig(obj: Any, *path: str | int, default: Any = None) -> Any:
+    """Follow dict keys / list indexes; return default if any step is missing or None."""
+    for key in path:
+        try:
+            obj = obj[key]
+        except (KeyError, IndexError, TypeError):   # TypeError: obj is None or wrong type
+            return default
+        if obj is None:
+            return default
+    return obj
+
+resp = {"data": [{"id": 1, "address": {"city": "London"}}, {"id": 3, "address": None}]}
+dig(resp, "data", 0, "address", "city")              # -> 'London'
+dig(resp, "data", 1, "address", "city")              # -> None
+dig(resp, "data", 5, "id", default=-1)               # -> -1
+```
+
+### Iterate a list of records
+
+```python
+users = [
+    {"id": 1, "name": "Ada", "tags": ["admin", "beta"]},
+    {"id": 3, "name": "Grace", "tags": ["beta"]},
+    {"id": 4, "name": "Linus"},                       # no tags key
+]
+
+[u["name"] for u in users]                            # -> ['Ada', 'Grace', 'Linus']
+[u["id"] for u in users if "beta" in u.get("tags", [])]   # -> [1, 3]
+{tag for u in users for tag in u.get("tags", [])}     # -> {'admin', 'beta'} (flatten + dedupe)
+next((u for u in users if u["id"] == 3), None)        # -> {'id': 3, 'name': 'Grace', 'tags': ['beta']}
+by_id = {u["id"]: u for u in users}                   # index for O(1) lookups by id
+by_id[4]["name"]                                      # -> 'Linus'
+```
+
+### Validate required fields
+
+```python
+REQUIRED = ("id", "name", "email")
+
+def missing_fields(rec: dict) -> list[str]:
+    return [f for f in REQUIRED if rec.get(f) in (None, "")]
+
+records = [{"id": 1, "name": "Ada", "email": "ada@x.com"}, {"id": 4, "name": "Linus", "email": None}]
+valid = [r for r in records if not missing_fields(r)]
+invalid = {r["id"]: missing_fields(r) for r in records if missing_fields(r)}
+[r["id"] for r in valid], invalid   # -> ([1], {4: ['email']})
+```
+
+### match on payload shape (3.10+)
+
+```python
+def describe(event: dict) -> str:
+    match event:
+        case {"type": "order", "amount": int() | float() as amt, "user": {"id": uid}}:
+            return f"order {amt} by user {uid}"
+        case {"type": "refund", "order_id": str(oid)}:
+            return f"refund {oid}"
+        case {"type": "ping"}:
+            return "ping"
+        case {"type": other}:
+            return f"unknown type {other!r}"
+        case _:
+            return "malformed"
+
+describe({"type": "order", "amount": 9.5, "user": {"id": 7}, "extra": 1})   # -> 'order 9.5 by user 7'
+describe({"type": "refund", "order_id": "o2"})                              # -> 'refund o2'
+describe({"type": "order", "amount": "9.5"})                                # -> "unknown type 'order'"
+describe([1, 2])                                                            # -> 'malformed'
+# Mapping patterns ignore extra keys; class patterns like int() check the value's type
+```
+
+### Document the shape with TypedDict
+
+```python
+from typing import NotRequired, TypedDict
+
+class Address(TypedDict):
+    city: str
+    zip: NotRequired[str]
+
+class User(TypedDict):
+    id: int
+    name: str
+    email: str | None
+    address: Address | None
+
+class UsersPage(TypedDict):
+    data: list[User]
+    page: int
+    total_pages: int
+
+def cities(page: UsersPage) -> list[str]:
+    return [u["address"]["city"] for u in page["data"] if u["address"]]
+
+# TypedDict is only a type hint: at runtime it's a plain dict, nothing is validated.
+cities({"data": [{"id": 1, "name": "Ada", "email": None, "address": {"city": "London"}}],
+        "page": 1, "total_pages": 1})   # -> ['London']
+```
+
+### Convert to a dataclass at the boundary
+
+```python
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class User:
+    id: int
+    name: str
+    city: str | None
+
+    @classmethod
+    def from_api(cls, d: dict) -> "User":
+        return cls(id=int(d["id"]), name=d["name"].strip(),
+                   city=(d.get("address") or {}).get("city"))
+
+User.from_api({"id": "1", "name": " Ada ", "address": None})   # -> User(id=1, name='Ada', city=None)
+# Parse messy JSON once, then the rest of the script uses clean attribute access: user.city
+```
+
+## Docs
+
+- [dict.get](https://docs.python.org/3.14/library/stdtypes.html#dict.get)
+- [Mapping patterns (match)](https://docs.python.org/3.14/reference/compound_stmts.html#mapping-patterns)
+- [Class patterns (match)](https://docs.python.org/3.14/reference/compound_stmts.html#class-patterns)
+- [typing.TypedDict](https://docs.python.org/3.14/library/typing.html#typing.TypedDict)
+- [typing.NotRequired](https://docs.python.org/3.14/library/typing.html#typing.NotRequired)
+- [dataclasses.dataclass](https://docs.python.org/3.14/library/dataclasses.html#dataclasses.dataclass)
+- [json.dumps (indent for inspecting)](https://docs.python.org/3.14/library/json.html#json.dumps)

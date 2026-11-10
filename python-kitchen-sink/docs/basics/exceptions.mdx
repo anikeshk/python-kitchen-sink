@@ -3,7 +3,7 @@ title: Exceptions
 sidebar_position: 10
 ---
 
-Raise and handle errors with `try`/`except`. In LLD interviews, define custom exception classes and raise them for invalid state; in DSA, `try` is rare but useful for parsing input or catching `KeyError`/`IndexError`.
+Raise and handle errors with `try`/`except`. In LLD, define custom exception classes and raise them for invalid state; in DSA, `try` is rare but useful for parsing input or catching `KeyError`/`IndexError`.
 
 ## Syntax
 
@@ -101,7 +101,7 @@ except* ValueError as eg:
     print("values:", eg.exceptions)
 except* TypeError as eg:
     print("types:", eg.exceptions)
-# Mostly for concurrent code (asyncio.TaskGroup); rare in interviews
+# Mostly for concurrent code (asyncio.TaskGroup); rarely needed otherwise
 ```
 
 ### Common built-in exceptions

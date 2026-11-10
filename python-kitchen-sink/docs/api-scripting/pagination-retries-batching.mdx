@@ -1,0 +1,219 @@
+---
+title: Pagination, retries & batching
+sidebar_position: 7
+---
+
+Real APIs return data a page at a time, fail now and then, and rate-limit you. **Pagination**: wrap the page loop in a generator that `yield`s records, so callers just write `for user in fetch_all_users()` and never see page numbers or cursors. **Retries**: retry only transient failures (connection errors, 429, 5xx) with exponential backoff, a cap on attempts, and respect for the `Retry-After` header; never blindly retry a 4xx. **Batching**: send updates in chunks with `itertools.batched` (3.12+) if the API takes bulk payloads, and run independent GETs in parallel with a thread pool. Snippets run against the local [mock API server](/api-scripting/mock-api-server).
+
+## Syntax
+
+```python
+from collections.abc import Iterator
+import requests
+
+BASE_URL = "http://localhost:8000"
+
+def fetch_all_users(per_page: int = 2) -> Iterator[dict]:
+    """Page-number pagination: GET /users?page=N until page == total_pages."""
+    page = 1
+    while True:
+        r = requests.get(f"{BASE_URL}/users", params={"page": page, "per_page": per_page}, timeout=5)
+        r.raise_for_status()
+        body = r.json()
+        yield from body["data"]
+        if page >= body["total_pages"] or not body["data"]:
+            break
+        page += 1
+
+[u["id"] for u in fetch_all_users()]   # -> [1, 2, 3, 4, 5] (3 requests)
+```
+
+### Cursor pagination
+
+```python
+from collections.abc import Iterator
+import requests
+
+BASE_URL = "http://localhost:8000"
+
+def fetch_all_orders(limit: int = 2) -> Iterator[dict]:
+    """Cursor pagination: pass back next_cursor until it's null."""
+    params: dict = {"limit": limit}
+    while True:
+        r = requests.get(f"{BASE_URL}/orders", params=params, timeout=5)
+        r.raise_for_status()
+        body = r.json()
+        yield from body["data"]
+        if not (cursor := body.get("next_cursor")):
+            break
+        params["cursor"] = cursor
+
+[o["id"] for o in fetch_all_orders()]   # -> ['o1', 'o2', 'o3', 'o4', 'o5', 'o6']
+# Other styles: offset/limit (?offset=20&limit=10, stop when fewer than limit come back)
+# and Link headers (requests parses them: r.links["next"]["url"])
+```
+
+### Generators are lazy: take only what you need
+
+```python
+from collections.abc import Iterator
+from itertools import islice
+import requests
+
+def fetch_all_users() -> Iterator[dict]:
+    page = 1
+    while True:
+        body = requests.get("http://localhost:8000/users", params={"page": page}, timeout=5).json()
+        yield from body["data"]
+        if page >= body["total_pages"]:
+            break
+        page += 1
+
+first_three = list(islice(fetch_all_users(), 3))     # stops after 2 requests
+next(u for u in fetch_all_users() if u["status"] == "inactive")["name"]   # -> 'Alan Turing'
+```
+
+### Retry with exponential backoff
+
+```python
+import time
+import requests
+
+RETRYABLE = {429, 500, 502, 503, 504}
+
+def get_with_retry(url: str, *, attempts: int = 4, base_delay: float = 0.5, **kwargs) -> requests.Response:
+    reason = ""
+    for attempt in range(1, attempts + 1):
+        retry_after = None
+        try:
+            r = requests.get(url, timeout=5, **kwargs)
+            if r.status_code not in RETRYABLE:
+                return r                        # success, or a 4xx that retrying won't fix
+            reason = f"HTTP {r.status_code}"
+            retry_after = r.headers.get("Retry-After")
+        except (requests.ConnectionError, requests.Timeout) as e:
+            reason = type(e).__name__
+        if attempt < attempts:
+            delay = float(retry_after) if retry_after else base_delay * 2 ** (attempt - 1)
+            print(f"attempt {attempt} failed ({reason}), sleeping {delay}s")
+            time.sleep(delay)                   # 0.5, 1, 2... (or what the server asked)
+    raise RuntimeError(f"giving up on {url} after {attempts} attempts: {reason}")
+
+r = get_with_retry("http://localhost:8000/flaky")   # fails twice with 503, then succeeds
+# prints: attempt 1 failed (HTTP 503), sleeping 1.0s
+#         attempt 2 failed (HTTP 503), sleeping 1.0s
+r.json()   # -> {'ok': True, 'attempts': 3}
+# Add random jitter (delay * random.uniform(0.5, 1.5)) when many clients retry at once
+```
+
+### A @retry decorator
+
+```python
+import functools
+import time
+from collections.abc import Callable
+
+class TransientError(Exception):
+    """Raise this for failures worth retrying (429, 5xx, timeouts)."""
+
+def retry(attempts: int = 3, delay: float = 0.1, backoff: float = 2.0):
+    def decorator(fn: Callable) -> Callable:
+        @functools.wraps(fn)
+        def wrapper(*args, **kwargs):
+            wait = delay
+            for attempt in range(1, attempts + 1):
+                try:
+                    return fn(*args, **kwargs)
+                except TransientError:
+                    if attempt == attempts:
+                        raise
+                    time.sleep(wait)
+                    wait *= backoff
+        return wrapper
+    return decorator
+
+import requests
+
+@retry(attempts=4)
+def get_flaky() -> dict:
+    r = requests.get("http://localhost:8000/flaky", timeout=5)
+    if r.status_code in {429, 500, 502, 503, 504}:
+        raise TransientError(r.status_code)
+    r.raise_for_status()
+    return r.json()
+
+get_flaky()["ok"]   # -> True
+```
+
+### Batch POSTs with itertools.batched (3.12+)
+
+```python
+from itertools import batched
+
+updates = [{"id": i, "tier": "gold"} for i in range(1, 8)]
+
+for batch in batched(updates, 3):          # tuples of up to 3 items
+    print([u["id"] for u in batch])        # then: requests.post(bulk_url, json=list(batch))
+# [1, 2, 3]
+# [4, 5, 6]
+# [7]
+
+# Before 3.12: [updates[i:i + 3] for i in range(0, len(updates), 3)]
+```
+
+### Rate limiting: space out requests
+
+```python
+import time
+
+class RateLimiter:
+    """Allow at most `per_second` calls per second (simple fixed spacing)."""
+
+    def __init__(self, per_second: float) -> None:
+        self.interval = 1 / per_second
+        self.last = 0.0
+
+    def wait(self) -> None:
+        now = time.monotonic()
+        sleep_for = self.last + self.interval - now
+        if sleep_for > 0:
+            time.sleep(sleep_for)
+        self.last = time.monotonic()
+
+limiter = RateLimiter(per_second=5)
+start = time.monotonic()
+for _ in range(6):
+    limiter.wait()      # then: requests.get(...)
+round(time.monotonic() - start, 1)   # -> 1.0 (6 calls at 5/s)
+```
+
+### Parallel GETs with a thread pool
+
+```python
+from concurrent.futures import ThreadPoolExecutor
+import requests
+
+def fetch_user(user_id: int) -> dict | None:
+    r = requests.get(f"http://localhost:8000/users/{user_id}", timeout=5)
+    return r.json() if r.ok else None
+
+with ThreadPoolExecutor(max_workers=4) as pool:
+    users = list(pool.map(fetch_user, [1, 2, 3, 99]))   # results in input order
+
+[u["id"] if u else None for u in users]   # -> [1, 2, 3, None]
+# HTTP calls are I/O-bound, so threads give a real speedup. Keep max_workers modest
+# to stay under the API's rate limit; mention this tradeoff, but build sequential first.
+```
+
+## Docs
+
+- [Generators (yield)](https://docs.python.org/3.14/tutorial/classes.html#generators)
+- [yield from](https://docs.python.org/3.14/reference/expressions.html#yield-expressions)
+- [collections.abc.Iterator](https://docs.python.org/3.14/library/collections.abc.html#collections.abc.Iterator)
+- [itertools.islice](https://docs.python.org/3.14/library/itertools.html#itertools.islice)
+- [itertools.batched](https://docs.python.org/3.14/library/itertools.html#itertools.batched)
+- [time.sleep](https://docs.python.org/3.14/library/time.html#time.sleep)
+- [time.monotonic](https://docs.python.org/3.14/library/time.html#time.monotonic)
+- [functools.wraps](https://docs.python.org/3.14/library/functools.html#functools.wraps)
+- [concurrent.futures.ThreadPoolExecutor](https://docs.python.org/3.14/library/concurrent.futures.html#concurrent.futures.ThreadPoolExecutor)
+- [requests: Link headers](https://requests.readthedocs.io/en/latest/user/advanced/#link-headers)

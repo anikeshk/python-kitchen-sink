@@ -1,0 +1,259 @@
+---
+title: Mock API server
+sidebar_position: 10
+---
+
+To practice without internet or a real API, run this stdlib-only fake JSON API on `http://localhost:8000`. It's built on `http.server` plus a `match` router, and every snippet in this section runs against it. It has page-number pagination (`/users`), cursor pagination (`/orders`), a POST endpoint that validates its body (`/users/{id}/summary`), a bearer-token endpoint (`/me`), a flaky endpoint for retry logic, `/status/{code}` for any status, `/echo`, which reflects your request back, and `/redirect`, an open redirect for the [security](/api-scripting/secure-api-practices) demos. The data is deliberately messy (padded names, mixed-case status, `null` fields, string amounts) so the cleaning code has something to fix. Restart the server to reset its state (POST ids, the flaky counter). For unit tests, skip the server and patch `requests` with `unittest.mock` instead.
+
+## Syntax
+
+Save as `mock_api.py` and run `python mock_api.py` in one terminal, then run your script in another.
+
+```python
+# mock_api.py: a tiny fake JSON API on http://localhost:8000 (stdlib only)
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
+
+TOKEN = "secret-token"
+
+USERS = [
+    {"id": 1, "name": " Ada Lovelace ", "email": "ADA@Example.com", "status": "active",
+     "signup": "2024-01-15", "address": {"city": "London", "zip": "N1"}, "tags": ["admin", "beta"]},
+    {"id": 2, "name": "Alan Turing", "email": "alan@example.com", "status": "inactive",
+     "signup": "2023-06-23", "address": {"city": "Manchester"}, "tags": []},
+    {"id": 3, "name": "Grace Hopper", "email": "grace@example.com", "status": "active",
+     "signup": "2024-12-09", "address": None, "tags": ["beta"]},
+    {"id": 4, "name": "Linus Torvalds", "email": None, "status": "active",
+     "signup": "2025-03-01", "address": {"city": "Portland", "zip": "97201"}, "tags": []},
+    {"id": 5, "name": "Margaret Hamilton", "email": "margaret@example.com", "status": "ACTIVE",
+     "signup": "2022-08-17", "address": {"city": "Boston"}, "tags": ["admin"]},
+]
+
+ORDERS = [
+    {"id": "o1", "user_id": 1, "amount": "19.99", "status": "paid"},
+    {"id": "o2", "user_id": 1, "amount": 5, "status": "refunded"},
+    {"id": "o3", "user_id": 3, "amount": "42.50", "status": "paid"},
+    {"id": "o4", "user_id": 2, "amount": "10.00", "status": "paid"},
+    {"id": "o5", "user_id": 5, "amount": "7.25", "status": "paid"},
+    {"id": "o6", "user_id": 3, "amount": "n/a", "status": "paid"},
+]
+
+SUMMARIES: list[dict] = []   # everything POSTed to /users/<id>/summary
+flaky_calls = 0
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *args) -> None:   # silence per-request logging
+        pass
+
+    def send_json(self, status: int, body: object = None, headers: dict | None = None) -> None:
+        raw = b"" if body is None else json.dumps(body).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def read_json(self) -> object:
+        length = int(self.headers.get("Content-Length", 0))
+        return json.loads(self.rfile.read(length) or b"null")   # JSONDecodeError on bad body
+
+    def route(self, method: str) -> None:
+        global flaky_calls
+        url = urlparse(self.path)
+        parts = url.path.strip("/").split("/")
+        q = {k: v[0] for k, v in parse_qs(url.query).items()}
+
+        match method, parts:
+            case "GET", ["users"]:
+                page, per_page = int(q.get("page", 1)), int(q.get("per_page", 2))
+                start = (page - 1) * per_page
+                total_pages = -(-len(USERS) // per_page)        # ceil division
+                self.send_json(200, {"data": USERS[start:start + per_page], "page": page,
+                                     "per_page": per_page, "total": len(USERS),
+                                     "total_pages": total_pages})
+            case "GET", ["users", uid]:
+                user = next((u for u in USERS if str(u["id"]) == uid), None)
+                if user is None:
+                    self.send_json(404, {"error": "user not found"})
+                else:
+                    self.send_json(200, user)
+            case "GET", ["orders"]:
+                start, limit = int(q.get("cursor", 0)), int(q.get("limit", 2))
+                end = start + limit
+                self.send_json(200, {"data": ORDERS[start:end],
+                                     "next_cursor": str(end) if end < len(ORDERS) else None})
+            case "POST", ["users", uid, "summary"]:
+                try:
+                    body = self.read_json()
+                except json.JSONDecodeError:
+                    return self.send_json(400, {"error": "invalid JSON"})
+                if not isinstance(body, dict) or "total_spent" not in body:
+                    return self.send_json(422, {"error": "total_spent is required"})
+                saved = {"id": len(SUMMARIES) + 1, "user_id": int(uid), **body}
+                SUMMARIES.append(saved)
+                self.send_json(201, saved)
+            case "GET", ["me"]:
+                if self.headers.get("Authorization") != f"Bearer {TOKEN}":
+                    self.send_json(401, {"error": "missing or bad token"})
+                else:
+                    self.send_json(200, {"user_id": 1, "name": "Ada Lovelace"})
+            case "GET", ["flaky"]:                              # fails twice, then succeeds
+                flaky_calls += 1
+                if flaky_calls % 3:
+                    self.send_json(503, {"error": "try again"}, {"Retry-After": "1"})
+                else:
+                    self.send_json(200, {"ok": True, "attempts": flaky_calls})
+            case _, ["status", code]:                           # respond with any status
+                self.send_json(int(code), None if code == "204" else {"status": int(code)})
+            case _, ["echo"]:                                   # reflect the request back
+                body = self.read_json() if self.headers.get("Content-Length") else None
+                self.send_json(200, {"method": method, "query": q, "json": body,
+                                     "content_type": self.headers.get("Content-Type"),
+                                     "authorization": self.headers.get("Authorization"),
+                                     "api_key": self.headers.get("X-API-Key")})
+            case "GET", ["redirect"]:                           # deliberate open redirect, for demos
+                to = q.get("to", "/")
+                self.send_json(302, {"location": to}, {"Location": to})
+            case _:
+                self.send_json(404, {"error": f"no route for {method} {url.path}"})
+
+    def do_GET(self) -> None: self.route("GET")
+    def do_POST(self) -> None: self.route("POST")
+    def do_PUT(self) -> None: self.route("PUT")
+    def do_PATCH(self) -> None: self.route("PATCH")
+    def do_DELETE(self) -> None: self.route("DELETE")
+
+
+def start_mock_server(port: int = 8000) -> ThreadingHTTPServer:
+    """Serve in a background thread; call .shutdown() when done."""
+    server = ThreadingHTTPServer(("localhost", port), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server
+
+
+if __name__ == "__main__":
+    print("Mock API on http://localhost:8000 (Ctrl+C to stop)")
+    ThreadingHTTPServer(("localhost", 8000), Handler).serve_forever()
+```
+
+### Endpoints
+
+| Method | Path | Response |
+| --- | --- | --- |
+| GET | `/users?page=1&per_page=2` | `200 {"data": [...], "page", "per_page", "total", "total_pages"}` |
+| GET | `/users/{id}` | `200` user, or `404 {"error": "user not found"}` |
+| GET | `/orders?cursor=0&limit=2` | `200 {"data": [...], "next_cursor": "2" \| null}` |
+| POST | `/users/{id}/summary` | `201` echo with new `id`; `400` bad JSON; `422` if `total_spent` missing |
+| GET | `/me` | `200` with `Authorization: Bearer secret-token`, else `401` |
+| GET | `/flaky` | `503` (with `Retry-After: 1`) twice, then `200`; repeats every 3 calls |
+| any | `/status/{code}` | That status code (`204` has an empty body) |
+| any | `/echo?x=1` | `200 {"method", "query", "json", "content_type", "authorization", "api_key"}` |
+| GET | `/redirect?to=URL` | `302` to any URL (a deliberate open redirect, for the security demos) |
+
+### Run it in-process (one file, no second terminal)
+
+```python
+import requests
+from mock_api import start_mock_server   # the file above, saved next to this script
+
+server = start_mock_server()              # background thread
+try:
+    r = requests.get("http://localhost:8000/users", params={"per_page": 5}, timeout=5)
+    [u["id"] for u in r.json()["data"]]   # -> [1, 2, 3, 4, 5]
+    requests.post("http://localhost:8000/echo", json={"a": 1}, timeout=5).json()["json"]   # -> {'a': 1}
+finally:
+    server.shutdown()
+```
+
+### Unit test with unittest.mock (no server)
+
+```python
+import unittest
+from unittest.mock import MagicMock, patch
+
+import requests
+
+
+def fetch_active_names(base_url: str) -> list[str]:
+    r = requests.get(f"{base_url}/users", params={"per_page": 100}, timeout=5)
+    r.raise_for_status()
+    return [u["name"].strip() for u in r.json()["data"] if u["status"].lower() == "active"]
+
+
+class TestFetchActiveNames(unittest.TestCase):
+    @patch("requests.get")      # patch where it's looked up: "mymodule.requests.get" if imported
+    def test_filters_and_cleans(self, mock_get: MagicMock) -> None:
+        mock_get.return_value.json.return_value = {
+            "data": [{"name": " Ada ", "status": "ACTIVE"}, {"name": "Alan", "status": "inactive"}]
+        }
+        self.assertEqual(fetch_active_names("http://api"), ["Ada"])
+        mock_get.assert_called_once_with("http://api/users", params={"per_page": 100}, timeout=5)
+
+    @patch("requests.get")
+    def test_http_error_propagates(self, mock_get: MagicMock) -> None:
+        mock_get.return_value.raise_for_status.side_effect = requests.HTTPError("500")
+        with self.assertRaises(requests.HTTPError):
+            fetch_active_names("http://api")
+
+
+if __name__ == "__main__":
+    unittest.main()   # -> Ran 2 tests ... OK
+```
+
+### Test pure transforms directly
+
+```python
+import unittest
+
+
+def summarize(orders: list[dict]) -> dict[int, float]:
+    totals: dict[int, float] = {}
+    for o in orders:
+        if o["status"] == "paid":
+            totals[o["user_id"]] = totals.get(o["user_id"], 0) + float(o["amount"])
+    return totals
+
+
+class TestSummarize(unittest.TestCase):
+    def test_only_paid_orders_count(self) -> None:
+        orders = [
+            {"user_id": 1, "amount": "10.5", "status": "paid"},
+            {"user_id": 1, "amount": 5, "status": "refunded"},
+            {"user_id": 2, "amount": "1", "status": "paid"},
+        ]
+        self.assertEqual(summarize(orders), {1: 10.5, 2: 1.0})
+
+    def test_empty(self) -> None:
+        self.assertEqual(summarize([]), {})
+
+
+if __name__ == "__main__":
+    unittest.main()
+# Keeping fetch/transform/post separate is what makes this possible: no mocks needed.
+```
+
+### Quick checks from the shell
+
+```python
+# curl -s localhost:8000/users | python -m json.tool
+# curl -s -i localhost:8000/users/99                              # -i shows status + headers
+# curl -s -X POST localhost:8000/users/1/summary \
+#      -H 'Content-Type: application/json' -d '{"total_spent": 10}'
+# curl -s localhost:8000/me -H 'Authorization: Bearer secret-token'
+```
+
+## Docs
+
+- [http.server](https://docs.python.org/3.14/library/http.server.html)
+- [http.server.BaseHTTPRequestHandler](https://docs.python.org/3.14/library/http.server.html#http.server.BaseHTTPRequestHandler)
+- [http.server.ThreadingHTTPServer](https://docs.python.org/3.14/library/http.server.html#http.server.ThreadingHTTPServer)
+- [urllib.parse.parse_qs](https://docs.python.org/3.14/library/urllib.parse.html#urllib.parse.parse_qs)
+- [threading.Thread](https://docs.python.org/3.14/library/threading.html#threading.Thread)
+- [unittest.mock.patch](https://docs.python.org/3.14/library/unittest.mock.html#unittest.mock.patch)
+- [unittest.mock: Where to patch](https://docs.python.org/3.14/library/unittest.mock.html#where-to-patch)
+- [unittest.mock.MagicMock](https://docs.python.org/3.14/library/unittest.mock.html#unittest.mock.MagicMock)

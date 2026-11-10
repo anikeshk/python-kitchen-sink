@@ -1,0 +1,139 @@
+---
+title: urllib.request
+sidebar_position: 3
+---
+
+The stdlib HTTP client, for when `requests` isn't installed. It's more verbose: you build a `Request` (URL, method, headers, body as **bytes**), open it with `urlopen`, and decode the JSON yourself. The two big gotchas: `urlopen` **raises** `HTTPError` for 4xx/5xx instead of returning a response, and a `Request` with `data=` defaults to POST. Write a small `http_json` helper once at the start and the rest of the script looks just like `requests` code. `urllib.parse` builds query strings and URLs. Snippets run against the local [mock API server](/api-scripting/mock-api-server).
+
+## Syntax
+
+```python
+import json
+from urllib.request import urlopen
+
+BASE_URL = "http://localhost:8000"
+
+with urlopen(f"{BASE_URL}/users/1", timeout=5) as resp:
+    resp.status                          # -> 200
+    resp.headers["Content-Type"]         # -> 'application/json'
+    user = json.load(resp)               # read + parse (or json.loads(resp.read()))
+
+user["email"]   # -> 'ADA@Example.com'
+```
+
+### POST JSON with a Request
+
+```python
+import json
+from urllib.request import Request, urlopen
+
+BASE_URL = "http://localhost:8000"
+
+body = json.dumps({"total_spent": 24.99}).encode()   # str -> bytes
+req = Request(
+    f"{BASE_URL}/users/1/summary",
+    data=body,
+    method="POST",                                    # default is POST when data is set
+    headers={"Content-Type": "application/json", "Authorization": "Bearer secret-token"},
+)
+with urlopen(req, timeout=5) as resp:
+    resp.status, json.load(resp)   # -> (201, {'id': 1, 'user_id': 1, 'total_spent': 24.99})
+```
+
+### HTTPError and URLError
+
+```python
+import json
+from urllib.error import HTTPError, URLError
+from urllib.request import urlopen
+
+try:
+    with urlopen("http://localhost:8000/users/99", timeout=5) as resp:
+        data = json.load(resp)
+except HTTPError as e:            # server answered with 4xx/5xx; must come before URLError
+    e.code                        # -> 404
+    e.reason                      # -> 'Not Found'
+    json.loads(e.read())          # -> {'error': 'user not found'}  (the error body)
+except URLError as e:             # never reached the server: DNS, refused, timeout
+    print("network error:", e.reason)
+```
+
+### Query strings and URL building: urllib.parse
+
+```python
+from urllib.parse import quote, urlencode, urljoin, urlparse, parse_qs
+
+urlencode({"page": 2, "q": "ada lovelace"})          # -> 'page=2&q=ada+lovelace'
+urlencode({"id": [1, 2]}, doseq=True)                # -> 'id=1&id=2'
+quote("a/b c")                                       # -> 'a/b%20c'  (for path segments)
+quote("a/b c", safe="")                              # -> 'a%2Fb%20c'
+
+urljoin("http://localhost:8000/api/", "users/1")     # -> 'http://localhost:8000/api/users/1'
+urljoin("http://localhost:8000/api", "users/1")      # -> 'http://localhost:8000/users/1' (no trailing /)
+
+u = urlparse("http://localhost:8000/users?page=2&per_page=3")
+u.path, parse_qs(u.query)   # -> ('/users', {'page': ['2'], 'per_page': ['3']})
+```
+
+### A reusable helper: http_json
+
+```python
+import json
+from urllib.error import HTTPError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+
+BASE_URL = "http://localhost:8000"
+
+def http_json(
+    method: str,
+    path: str,
+    *,
+    params: dict | None = None,
+    body: object = None,
+    headers: dict[str, str] | None = None,
+    timeout: float = 5,
+) -> tuple[int, object]:
+    """Send a request and return (status, parsed JSON or None). Never raises on 4xx/5xx."""
+    url = f"{BASE_URL}{path}"
+    if params:
+        url += "?" + urlencode(params, doseq=True)
+    data = None if body is None else json.dumps(body).encode()
+    req = Request(url, data=data, method=method,
+                  headers={"Content-Type": "application/json", "Accept": "application/json",
+                           **(headers or {})})
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            status, raw = resp.status, resp.read()
+    except HTTPError as e:
+        status, raw = e.code, e.read()
+    return status, (json.loads(raw) if raw else None)
+
+http_json("GET", "/users", params={"page": 3})[1]["data"][0]["id"]   # -> 5
+http_json("GET", "/users/99")                     # -> (404, {'error': 'user not found'})
+http_json("POST", "/users/2/summary", body={})    # -> (422, {'error': 'total_spent is required'})
+http_json("DELETE", "/status/204")                # -> (204, None)
+```
+
+### requests vs urllib cheat sheet
+
+| Task | `requests` | `urllib` |
+| --- | --- | --- |
+| GET with query | `requests.get(url, params=p, timeout=5)` | `urlopen(url + "?" + urlencode(p), timeout=5)` |
+| POST JSON | `requests.post(url, json=body)` | `Request(url, data=json.dumps(body).encode(), method="POST", headers={"Content-Type": "application/json"})` |
+| Status | `r.status_code` | `resp.status` / `e.code` |
+| Parse body | `r.json()` | `json.load(resp)` |
+| 4xx/5xx | returned normally; `r.raise_for_status()` to raise | raises `HTTPError` |
+| Network error | `requests.ConnectionError` / `requests.Timeout` | `URLError` (timeouts may also raise `TimeoutError`) |
+
+## Docs
+
+- [urllib.request](https://docs.python.org/3.14/library/urllib.request.html)
+- [urllib.request.urlopen](https://docs.python.org/3.14/library/urllib.request.html#urllib.request.urlopen)
+- [urllib.request.Request](https://docs.python.org/3.14/library/urllib.request.html#urllib.request.Request)
+- [urllib.error.HTTPError](https://docs.python.org/3.14/library/urllib.error.html#urllib.error.HTTPError)
+- [urllib.error.URLError](https://docs.python.org/3.14/library/urllib.error.html#urllib.error.URLError)
+- [urllib.parse.urlencode](https://docs.python.org/3.14/library/urllib.parse.html#urllib.parse.urlencode)
+- [urllib.parse.urljoin](https://docs.python.org/3.14/library/urllib.parse.html#urllib.parse.urljoin)
+- [urllib.parse.quote](https://docs.python.org/3.14/library/urllib.parse.html#urllib.parse.quote)
+- [HOWTO: Fetch Internet Resources Using urllib](https://docs.python.org/3.14/howto/urllib2.html)

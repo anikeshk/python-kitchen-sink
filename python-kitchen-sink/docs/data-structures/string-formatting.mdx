@@ -3,7 +3,7 @@ title: String formatting
 sidebar_position: 6
 ---
 
-f-strings are the default way to format output: readable, fast, and they support the full format-spec mini-language for width, padding, precision and binary. Use the `=` specifier for quick debug prints during an interview.
+f-strings are the default way to format output: readable, fast, and they support the full format-spec mini-language for width, padding, precision and binary. Use the `=` specifier for quick debug prints.
 
 ## Syntax
 
@@ -78,7 +78,7 @@ name = "Ada"
 t = t"Hello {name}"            # 3.14+ (PEP 750), returns a Template, not a str
 type(t)                        # -> <class 'string.templatelib.Template'>
 [p.value for p in t.interpolations]   # -> ['Ada']
-# For safe HTML/SQL rendering by libraries; rarely needed in interviews
+# For safe HTML/SQL rendering by libraries; rarely needed otherwise
 ```
 
 ## Docs

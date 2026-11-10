@@ -1,0 +1,394 @@
+---
+title: Structuring an API script
+sidebar_position: 8
+---
+
+Clarity and adaptability matter more than cleverness, so give the script a shape that's easy to follow: **config** at the top (base URL, token, timeouts as constants), a small **API client** that owns HTTP details (headers, timeouts, errors, pagination), **records** parsed once at the boundary (dataclasses with `from_api`/`to_payload`), **pure transform functions** with no I/O, and a `main()` that reads like the task: fetch → transform → post → report. When a requirement changes ("also skip users with no email", "send in batches of 10"), you change one function. Work incrementally: make one GET and print a record before writing any transform. The worked example runs against the local [mock API server](/api-scripting/mock-api-server).
+
+## Syntax
+
+```python
+"""One-line summary of what the script does."""
+import logging
+import os
+import sys
+
+import requests
+
+BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")   # config up top
+TIMEOUT = 5
+
+log = logging.getLogger(__name__)
+
+
+def fetch_items(session: requests.Session) -> list[dict]:      # I/O: GET
+    r = session.get(f"{BASE_URL}/users", timeout=TIMEOUT)
+    r.raise_for_status()
+    return r.json()["data"]
+
+
+def transform(items: list[dict]) -> list[dict]:                # pure: no I/O, easy to test
+    return [{"id": i["id"], "name": i["name"].strip()} for i in items]
+
+
+def post_results(session: requests.Session, results: list[dict]) -> None:   # I/O: POST
+    for res in results:
+        log.info("would POST %s", res)
+
+
+def main() -> int:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    with requests.Session() as session:
+        post_results(session, transform(fetch_items(session)))
+    return 0
+
+
+if __name__ == "__main__":      # runs only when executed, not when imported (e.g. by tests)
+    sys.exit(main())
+```
+
+### An API client class
+
+```python
+from collections.abc import Iterator
+
+import requests
+
+
+class ApiError(Exception):
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+class ApiClient:
+    """Owns the HTTP details so the rest of the script deals only in dicts."""
+
+    def __init__(self, base_url: str, token: str | None = None, timeout: float = 5) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self.session = requests.Session()
+        self.session.headers["Accept"] = "application/json"
+        if token:
+            self.session.headers["Authorization"] = f"Bearer {token}"
+
+    def request(self, method: str, path: str, **kwargs) -> dict | None:
+        try:
+            r = self.session.request(method, f"{self.base_url}{path}", timeout=self.timeout, **kwargs)
+        except requests.RequestException as e:                  # network-level failure
+            raise ApiError(f"{method} {path} failed: {e}") from e
+        if not r.ok:
+            raise ApiError(f"{method} {path} -> {r.status_code}: {r.text}", r.status_code)
+        return r.json() if r.content else None                  # 204 has no body
+
+    def get(self, path: str, **params) -> dict | None:
+        return self.request("GET", path, params=params)
+
+    def post(self, path: str, body: dict) -> dict | None:
+        return self.request("POST", path, json=body)
+
+    def paginate(self, path: str, per_page: int = 2) -> Iterator[dict]:
+        page = 1
+        while True:
+            body = self.get(path, page=page, per_page=per_page)
+            yield from body["data"]
+            if page >= body["total_pages"]:
+                return
+            page += 1
+
+
+api = ApiClient("http://localhost:8000", token="secret-token")
+api.get("/me")                             # -> {'user_id': 1, 'name': 'Ada Lovelace'}
+len(list(api.paginate("/users")))          # -> 5
+try:
+    api.get("/users/99")
+except ApiError as e:
+    e.status, str(e)   # -> (404, 'GET /users/99 -> 404: {"error": "user not found"}')
+```
+
+### Records: parse at the boundary, serialize on the way out
+
+```python
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class User:
+    id: int
+    name: str
+    email: str | None
+    active: bool
+
+    @classmethod
+    def from_api(cls, d: dict) -> "User":
+        email = (d.get("email") or "").strip().lower()
+        return cls(
+            id=int(d["id"]),
+            name=d["name"].strip(),
+            email=email or None,
+            active=str(d.get("status", "")).lower() == "active",
+        )
+
+
+@dataclass(frozen=True)
+class Summary:
+    user_id: int
+    total_spent: float
+    order_count: int
+
+    def to_payload(self) -> dict:
+        return {"total_spent": round(self.total_spent, 2), "order_count": self.order_count}
+
+
+User.from_api({"id": 1, "name": " Ada ", "email": "ADA@X.com", "status": "ACTIVE"})
+# -> User(id=1, name='Ada', email='ada@x.com', active=True)
+Summary(1, 24.989, 2).to_payload()   # -> {'total_spent': 24.99, 'order_count': 2}
+```
+
+### logging instead of print
+
+```python
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+log = logging.getLogger("sync")
+
+log.info("fetched %d users", 5)              # INFO fetched 5 users
+log.warning("skipping order %s", "o6")       # WARNING skipping order o6
+log.debug("raw: %s", {"id": 1})              # hidden at INFO level; set level=DEBUG to see it
+# Lazy %-formatting: args are only formatted if the message is emitted.
+# print() is fine for a quick one-off script too; just be consistent.
+```
+
+### Worked example: summarize orders per user and POST
+
+Task: for every **active** user (status is case-insensitive), total their **paid** orders (amounts may be strings or garbage), POST `{"total_spent", "order_count", "tier"}` to `/users/{id}/summary` (tier is `gold` at 40 or more), and report what succeeded.
+
+```python
+"""Summarize paid orders per active user and POST one summary per user."""
+import logging
+import os
+import sys
+from collections import defaultdict
+from collections.abc import Iterator
+from dataclasses import dataclass
+
+import requests
+
+BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
+TOKEN = os.environ.get("API_TOKEN", "secret-token")
+TIMEOUT = 5
+GOLD_THRESHOLD = 40.0
+
+log = logging.getLogger("summaries")
+
+
+# ---------- HTTP ----------
+
+class ApiError(Exception):
+    def __init__(self, message: str, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+class ApiClient:
+    def __init__(self, base_url: str, token: str, timeout: float = TIMEOUT) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.timeout = timeout
+        self.session = requests.Session()
+        self.session.headers.update({"Authorization": f"Bearer {token}",
+                                     "Accept": "application/json"})
+
+    def request(self, method: str, path: str, **kwargs) -> dict | None:
+        try:
+            r = self.session.request(method, f"{self.base_url}{path}", timeout=self.timeout, **kwargs)
+        except requests.RequestException as e:
+            raise ApiError(f"{method} {path} failed: {e}") from e
+        if not r.ok:
+            raise ApiError(f"{method} {path} -> {r.status_code}: {r.text}", r.status_code)
+        return r.json() if r.content else None
+
+    def get(self, path: str, **params) -> dict | None:
+        return self.request("GET", path, params=params)
+
+    def post(self, path: str, body: dict) -> dict | None:
+        return self.request("POST", path, json=body)
+
+    def pages(self, path: str, per_page: int = 2) -> Iterator[dict]:
+        page = 1
+        while True:
+            body = self.get(path, page=page, per_page=per_page)
+            yield from body["data"]
+            if page >= body["total_pages"]:
+                return
+            page += 1
+
+    def cursor_pages(self, path: str, limit: int = 2) -> Iterator[dict]:
+        params: dict = {"limit": limit}
+        while True:
+            body = self.get(path, **params)
+            yield from body["data"]
+            if not (cursor := body.get("next_cursor")):
+                return
+            params["cursor"] = cursor
+
+
+# ---------- records ----------
+
+@dataclass(frozen=True)
+class User:
+    id: int
+    name: str
+    active: bool
+
+    @classmethod
+    def from_api(cls, d: dict) -> "User":
+        return cls(id=int(d["id"]), name=d["name"].strip(),
+                   active=str(d.get("status", "")).lower() == "active")
+
+
+@dataclass(frozen=True)
+class Order:
+    id: str
+    user_id: int
+    amount: float
+    status: str
+
+    @classmethod
+    def from_api(cls, d: dict) -> "Order | None":
+        try:
+            amount = float(d["amount"])
+        except (KeyError, TypeError, ValueError):
+            log.warning("skipping order %s: bad amount %r", d.get("id"), d.get("amount"))
+            return None
+        return cls(id=d["id"], user_id=int(d["user_id"]), amount=amount, status=d["status"])
+
+
+@dataclass(frozen=True)
+class Summary:
+    user_id: int
+    total_spent: float
+    order_count: int
+
+    @property
+    def tier(self) -> str:
+        return "gold" if self.total_spent >= GOLD_THRESHOLD else "standard"
+
+    def to_payload(self) -> dict:
+        return {"total_spent": round(self.total_spent, 2),
+                "order_count": self.order_count, "tier": self.tier}
+
+
+# ---------- fetch ----------
+
+def fetch_users(api: ApiClient) -> list[User]:
+    return [User.from_api(d) for d in api.pages("/users")]
+
+
+def fetch_orders(api: ApiClient) -> list[Order]:
+    return [o for d in api.cursor_pages("/orders") if (o := Order.from_api(d))]
+
+
+# ---------- transform (pure) ----------
+
+def summarize(users: list[User], orders: list[Order]) -> list[Summary]:
+    paid: defaultdict[int, list[float]] = defaultdict(list)
+    for o in orders:
+        if o.status == "paid":
+            paid[o.user_id].append(o.amount)
+    return [Summary(u.id, sum(paid[u.id]), len(paid[u.id])) for u in users if u.active]
+
+
+# ---------- post ----------
+
+def post_summaries(api: ApiClient, summaries: list[Summary]) -> list[int]:
+    """POST each summary; return the user ids that failed (don't stop on one failure)."""
+    failed = []
+    for s in summaries:
+        try:
+            api.post(f"/users/{s.user_id}/summary", s.to_payload())
+            log.info("posted user %d: %s", s.user_id, s.to_payload())
+        except ApiError as e:
+            log.error("user %d: %s", s.user_id, e)
+            failed.append(s.user_id)
+    return failed
+
+
+def main() -> int:
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    api = ApiClient(BASE_URL, TOKEN)
+    users, orders = fetch_users(api), fetch_orders(api)
+    log.info("fetched %d users, %d valid orders", len(users), len(orders))
+    summaries = summarize(users, orders)
+    failed = post_summaries(api, summaries)
+    log.info("done: %d posted, %d failed %s", len(summaries) - len(failed), len(failed), failed)
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+
+# Output:
+# WARNING skipping order o6: bad amount 'n/a'
+# INFO fetched 5 users, 5 valid orders
+# INFO posted user 1: {'total_spent': 19.99, 'order_count': 1, 'tier': 'standard'}
+# INFO posted user 3: {'total_spent': 42.5, 'order_count': 1, 'tier': 'gold'}
+# INFO posted user 4: {'total_spent': 0, 'order_count': 0, 'tier': 'standard'}
+# INFO posted user 5: {'total_spent': 7.25, 'order_count': 1, 'tier': 'standard'}
+# INFO done: 4 posted, 0 failed []
+```
+
+### Adapting to new requirements
+
+```python
+# Each follow-up touches one small piece of the worked example above.
+
+# "Only include users who signed up in 2024 or later"
+#   -> add `signup: date` to User.from_api (date.fromisoformat(d["signup"]))
+#   -> summarize(): `for u in users if u.active and u.signup.year >= 2024`
+
+# "Don't post users with no orders"
+#   -> summarize(): `... for u in users if u.active and paid[u.id]`
+
+# "Add the user's city to the payload"
+#   -> User gets `city: str | None = (d.get("address") or {}).get("city")`
+#   -> Summary gets a `city` field; to_payload() includes it
+
+# "Refunded orders should subtract from the total"
+#   -> summarize(): `amount = o.amount if o.status == "paid" else -o.amount if o.status == "refunded" else 0`
+
+# "The API is rate limited / flaky"
+#   -> only ApiClient.request changes: retry 429/5xx with backoff (see Pagination, retries & batching)
+
+# "POST in bulk, 10 per request"
+#   -> post_summaries(): `for batch in itertools.batched(summaries, 10): api.post(bulk_path, [...])`
+
+# "Only POST summaries that changed since last run"
+#   -> GET existing summaries, index by user_id, diff, POST only the differences
+```
+
+### Workflow
+
+```python
+# 1. Pin down the task and the payload shapes. Check: auth? pagination? rate limits?
+# 2. Make ONE request and look at it:
+#      r = requests.get(url, timeout=5); print(r.status_code); print(json.dumps(r.json(), indent=2)[:1000])
+# 3. Write the skeleton (constants, fetch, transform, post, main) with stub bodies.
+# 4. Fill in fetch -> print counts. Fill in transform -> print 2 results. Then POST ONE record
+#    and check the response before looping over all of them.
+# 5. Handle errors: timeouts, non-2xx, missing fields. Don't let one bad record kill the run.
+# 6. Think through tradeoffs (retries, idempotency, batching, parallelism) even if
+#    you don't implement them yet.
+```
+
+## Docs
+
+- [`__main__`: top-level code environment](https://docs.python.org/3.14/library/__main__.html)
+- [logging (basic tutorial)](https://docs.python.org/3.14/howto/logging.html#logging-basic-tutorial)
+- [logging.basicConfig](https://docs.python.org/3.14/library/logging.html#logging.basicConfig)
+- [os.environ](https://docs.python.org/3.14/library/os.html#os.environ)
+- [sys.exit](https://docs.python.org/3.14/library/sys.html#sys.exit)
+- [dataclasses.dataclass](https://docs.python.org/3.14/library/dataclasses.html#dataclasses.dataclass)
+- [classmethod](https://docs.python.org/3.14/library/functions.html#classmethod)
+- [User-defined exceptions](https://docs.python.org/3.14/tutorial/errors.html#user-defined-exceptions)
+- [requests: Session objects](https://requests.readthedocs.io/en/latest/user/advanced/#session-objects)

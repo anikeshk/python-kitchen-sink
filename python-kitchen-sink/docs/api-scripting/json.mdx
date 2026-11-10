@@ -1,0 +1,150 @@
+---
+title: json
+sidebar_position: 1
+---
+
+`json` converts between JSON text and Python objects: `loads`/`dumps` work on strings, `load`/`dump` on files. Objects become `dict`, arrays become `list`, and `null`/`true`/`false` become `None`/`True`/`False`. Parsing and serializing are O(n) in the payload size. In API scripts you'll mostly let `requests` call these for you (`r.json()`, `json=`), but you need them for `urllib`, for pretty-printing a response while exploring, and for serializing things JSON can't hold natively (`datetime`, `set`, dataclasses). Gotcha: JSON object keys are always strings, so `{1: "a"}` comes back as `{"1": "a"}`.
+
+## Syntax
+
+```python
+import json
+
+text = '{"id": 1, "name": "Ada", "active": true, "manager": null, "tags": ["a", "b"]}'
+data = json.loads(text)   # str/bytes -> Python
+data["active"], data["manager"]   # -> (True, None)
+
+json.dumps(data)          # Python -> str
+# -> '{"id": 1, "name": "Ada", "active": true, "manager": null, "tags": ["a", "b"]}'
+```
+
+### Pretty-print while exploring a response
+
+```python
+import json
+
+data = {"id": 1, "address": {"city": "London"}, "tags": ["admin"]}
+print(json.dumps(data, indent=2, sort_keys=True))
+# {
+#   "address": {
+#     "city": "London"
+#   },
+#   "id": 1,
+#   "tags": [
+#     "admin"
+#   ]
+# }
+```
+
+### Compact output and non-ASCII
+
+```python
+import json
+
+json.dumps({"a": 1, "b": [1, 2]}, separators=(",", ":"))   # -> '{"a":1,"b":[1,2]}'
+json.dumps({"city": "Zürich"})                    # -> '{"city": "Z\\u00fcrich"}'
+json.dumps({"city": "Zürich"}, ensure_ascii=False) # -> '{"city": "Zürich"}'
+```
+
+### Files: load and dump
+
+```python
+import json
+
+with open("users.json", "w") as f:
+    json.dump([{"id": 1}, {"id": 2}], f, indent=2)
+
+with open("users.json") as f:
+    users = json.load(f)   # -> [{'id': 1}, {'id': 2}]
+```
+
+### Python ↔ JSON type mapping
+
+| Python | JSON | Notes |
+| --- | --- | --- |
+| `dict` | object | Non-str keys (`int`, `float`, `bool`, `None`) are converted to strings |
+| `list`, `tuple` | array | Tuples come back as lists |
+| `str` | string | |
+| `int`, `float` | number | `float("nan")`/`inf` are emitted as `NaN`/`Infinity` (not valid JSON); pass `allow_nan=False` to raise instead |
+| `True` / `False` | `true` / `false` | |
+| `None` | `null` | |
+| `set`, `datetime`, `Decimal`, dataclass | (none) | `TypeError` unless you pass `default=` |
+
+```python
+import json
+
+json.loads(json.dumps({1: "a", "t": (1, 2)}))   # -> {'1': 'a', 't': [1, 2]}
+```
+
+### Serialize unsupported types with default=
+
+```python
+import json
+from dataclasses import asdict, dataclass, is_dataclass
+from datetime import date, datetime
+
+@dataclass
+class User:
+    id: int
+    joined: date
+
+def to_jsonable(obj: object) -> object:
+    """Called only for objects json can't serialize itself."""
+    if isinstance(obj, (datetime, date)):
+        return obj.isoformat()
+    if isinstance(obj, set):
+        return sorted(obj)
+    if is_dataclass(obj):
+        return asdict(obj)
+    raise TypeError(f"not JSON serializable: {type(obj).__name__}")
+
+json.dumps({"user": User(1, date(2024, 1, 15)), "tags": {"b", "a"}}, default=to_jsonable)
+# -> '{"user": {"id": 1, "joined": "2024-01-15"}, "tags": ["a", "b"]}'
+# Note: asdict() keeps the date object; json then calls default() again on it.
+```
+
+### Handling bad JSON
+
+```python
+import json
+
+def parse(text: str) -> dict | None:
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:   # subclass of ValueError
+        print(f"bad JSON at line {e.lineno} col {e.colno}: {e.msg}")
+        return None
+
+parse('{"id": 1,}')   # prints: bad JSON at line 1 col 9: Illegal trailing comma before end of object
+parse("")             # prints: bad JSON at line 1 col 1: Expecting value
+```
+
+### Parse numbers precisely
+
+```python
+import json
+from decimal import Decimal
+
+json.loads('{"amount": 19.99}', parse_float=Decimal)   # -> {'amount': Decimal('19.99')}
+# Use for money so you don't get float rounding (0.1 + 0.2 != 0.3)
+```
+
+### Command line
+
+```python
+# Pretty-print a file or piped JSON from the shell:
+#   python -m json.tool users.json
+#   curl -s http://localhost:8000/users | python -m json.tool
+#   curl -s http://localhost:8000/users | python -m json   # 3.14+: python -m json works too
+```
+
+## Docs
+
+- [json](https://docs.python.org/3.14/library/json.html)
+- [json.loads](https://docs.python.org/3.14/library/json.html#json.loads)
+- [json.dumps](https://docs.python.org/3.14/library/json.html#json.dumps)
+- [json.load](https://docs.python.org/3.14/library/json.html#json.load)
+- [json.dump](https://docs.python.org/3.14/library/json.html#json.dump)
+- [json.JSONDecodeError](https://docs.python.org/3.14/library/json.html#json.JSONDecodeError)
+- [Encoders and decoders (type conversion table)](https://docs.python.org/3.14/library/json.html#encoders-and-decoders)
+- [Command-line interface](https://docs.python.org/3.14/library/json.html#module-json.tool)

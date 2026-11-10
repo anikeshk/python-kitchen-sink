@@ -1,0 +1,312 @@
+---
+title: Cleaning & transforming data
+sidebar_position: 6
+---
+
+The core of most API scripts: take a list of messy dicts from a GET, then **filter** (keep what matters), **clean** (normalize strings, coerce types, fill defaults), **map** (rename and reshape fields into the target schema), **aggregate** (group, count, sum, join with another endpoint) and build the payload to POST. Write each step as a small pure function (`dict -> dict` or `list -> list`) so it's easy to test and easy to change when the requirements change. Almost everything here is O(n) with comprehensions, `dict` indexing and `defaultdict`; sorting is O(n log n). Examples use records shaped like the [mock API's](/api-scripting/mock-api-server) users and orders.
+
+## Syntax
+
+```python
+users = [
+    {"id": 1, "name": " Ada Lovelace ", "email": "ADA@Example.com", "status": "active"},
+    {"id": 2, "name": "Alan Turing", "email": "alan@example.com", "status": "inactive"},
+    {"id": 4, "name": "Linus Torvalds", "email": None, "status": "active"},
+    {"id": 5, "name": "Margaret Hamilton", "email": "margaret@example.com", "status": "ACTIVE"},
+]
+
+def clean_user(u: dict) -> dict:
+    return {
+        "id": u["id"],
+        "name": u["name"].strip(),
+        "email": (u.get("email") or "").strip().lower() or None,
+        "active": u.get("status", "").lower() == "active",
+    }
+
+cleaned = [clean_user(u) for u in users]                         # map
+active = [u for u in cleaned if u["active"] and u["email"]]      # filter
+[(u["id"], u["email"]) for u in active]
+# -> [(1, 'ada@example.com'), (5, 'margaret@example.com')]
+```
+
+### Filter
+
+```python
+orders = [
+    {"id": "o1", "user_id": 1, "amount": 19.99, "status": "paid"},
+    {"id": "o2", "user_id": 1, "amount": 5.0, "status": "refunded"},
+    {"id": "o3", "user_id": 3, "amount": 42.5, "status": "paid"},
+]
+
+[o for o in orders if o["status"] == "paid"]                       # one condition
+[o["id"] for o in orders if o["status"] == "paid" and o["amount"] > 20]   # -> ['o3']
+[o["id"] for o in orders if o["status"] in {"paid", "refunded"}]   # set membership, O(1)
+list(filter(lambda o: o["user_id"] == 1, orders))                  # same as a comprehension
+```
+
+### Select and rename fields (projection)
+
+```python
+user = {"id": 1, "name": "Ada", "email": "ada@x.com", "internal_flag": True}
+
+FIELDS = ("id", "name", "email")
+{k: user[k] for k in FIELDS}                     # -> {'id': 1, 'name': 'Ada', 'email': 'ada@x.com'}
+
+RENAME = {"id": "user_id", "name": "full_name"}  # old -> new
+{RENAME.get(k, k): v for k, v in user.items() if k in FIELDS}
+# -> {'user_id': 1, 'full_name': 'Ada', 'email': 'ada@x.com'}
+
+{k: v for k, v in user.items() if k != "internal_flag"}   # drop one key (or dict.pop on a copy)
+```
+
+### Normalize strings
+
+```python
+" Ada  Lovelace ".strip()               # -> 'Ada  Lovelace'
+" ".join(" Ada  Lovelace ".split())     # -> 'Ada Lovelace' (collapse inner whitespace too)
+"ADA@Example.com".lower()               # -> 'ada@example.com'
+"Straße".casefold() == "STRASSE".casefold()   # -> True (aggressive, for comparisons)
+"grace hopper".title()                  # -> 'Grace Hopper'
+"order_id".replace("_", "-")            # -> 'order-id'
+"  ".strip() or None                    # -> None (empty string -> None)
+```
+
+### Coerce types safely
+
+```python
+from datetime import date, datetime
+
+def to_float(v: object, default: float | None = None) -> float | None:
+    try:
+        return float(v)
+    except (TypeError, ValueError):      # None, "n/a", "", lists...
+        return default
+
+[to_float(v) for v in ["19.99", 5, "n/a", None, " 7.25 "]]   # -> [19.99, 5.0, None, None, 7.25]
+
+int("42"), int(3.9), round(3.14159, 2)    # -> (42, 3, 3.14)
+bool("false")                             # -> True  (non-empty string!) so compare instead:
+str("false").lower() in {"true", "1", "yes"}   # -> False
+
+date.fromisoformat("2024-01-15")                       # -> datetime.date(2024, 1, 15)
+datetime.fromisoformat("2024-01-15T10:30:00Z")         # -> tz-aware UTC datetime (3.11+ accepts Z)
+datetime.strptime("15/01/2024", "%d/%m/%Y").date()     # -> datetime.date(2024, 1, 15)
+```
+
+### Fill defaults and drop empties
+
+```python
+rec = {"id": 4, "name": "Linus", "email": None, "tags": [], "city": ""}
+
+DEFAULTS = {"email": "unknown", "tags": [], "country": "US"}
+DEFAULTS | {k: v for k, v in rec.items() if v is not None}
+# -> {'email': 'unknown', 'tags': [], 'country': 'US', 'id': 4, 'name': 'Linus', 'city': ''}
+
+{k: v for k, v in rec.items() if v not in (None, "", [], {})}   # -> {'id': 4, 'name': 'Linus'}
+# Careful: `if v` would also drop 0 and False, which are usually real values
+```
+
+### Deduplicate
+
+```python
+events = [
+    {"id": 1, "v": "a", "ts": 1}, {"id": 2, "v": "b", "ts": 2},
+    {"id": 1, "v": "c", "ts": 3},
+]
+
+list(dict.fromkeys(["b", "a", "b"]))     # -> ['b', 'a'] (dedupe scalars, keep order)
+
+latest = {}
+for e in events:                         # keep the LAST record per id
+    latest[e["id"]] = e
+list(latest.values())   # -> [{'id': 1, 'v': 'c', 'ts': 3}, {'id': 2, 'v': 'b', 'ts': 2}]
+
+seen, first = set(), []
+for e in events:                         # keep the FIRST record per id
+    if e["id"] not in seen:
+        seen.add(e["id"])
+        first.append(e)
+[e["v"] for e in first]   # -> ['a', 'b']
+
+newest = {}
+for e in events:                         # keep the newest by timestamp, order-independent
+    if e["id"] not in newest or e["ts"] > newest[e["id"]]["ts"]:
+        newest[e["id"]] = e
+```
+
+### Sort
+
+```python
+users = [
+    {"name": "Grace", "city": "NYC", "spent": 42.5},
+    {"name": "Ada", "city": "London", "spent": 19.99},
+    {"name": "Alan", "city": "London", "spent": 19.99},
+]
+
+[u["name"] for u in sorted(users, key=lambda u: u["spent"], reverse=True)]
+# -> ['Grace', 'Ada', 'Alan']  (stable: ties keep input order)
+[u["name"] for u in sorted(users, key=lambda u: (-u["spent"], u["name"]))]
+# -> ['Grace', 'Ada', 'Alan']  (spent desc, then name asc)
+[u["name"] for u in sorted(users, key=lambda u: (u["city"], u["name"]))]
+# -> ['Ada', 'Alan', 'Grace']
+
+from operator import itemgetter
+sorted(users, key=itemgetter("city", "name"))   # same as the lambda above
+max(users, key=itemgetter("spent"))["name"]     # -> 'Grace'
+```
+
+### Group, count, sum
+
+```python
+from collections import Counter, defaultdict
+
+orders = [
+    {"user_id": 1, "amount": 19.99, "status": "paid"},
+    {"user_id": 1, "amount": 5.0, "status": "refunded"},
+    {"user_id": 3, "amount": 42.5, "status": "paid"},
+    {"user_id": 1, "amount": 10.0, "status": "paid"},
+]
+
+by_user: defaultdict[int, list[dict]] = defaultdict(list)
+for o in orders:
+    by_user[o["user_id"]].append(o)
+{uid: len(os) for uid, os in by_user.items()}     # -> {1: 3, 3: 1}
+
+totals: defaultdict[int, float] = defaultdict(float)
+for o in orders:
+    if o["status"] == "paid":
+        totals[o["user_id"]] += o["amount"]
+dict(totals)                                      # -> {1: 29.99, 3: 42.5}
+
+Counter(o["status"] for o in orders)              # -> Counter({'paid': 3, 'refunded': 1})
+Counter(o["status"] for o in orders).most_common(1)   # -> [('paid', 3)]
+
+stats = {uid: {"count": len(os), "total": round(sum(o["amount"] for o in os), 2),
+               "max": max(o["amount"] for o in os)}
+         for uid, os in by_user.items()}
+stats[1]   # -> {'count': 3, 'total': 34.99, 'max': 19.99}
+```
+
+### Join two endpoints by id
+
+```python
+users = [{"id": 1, "name": "Ada"}, {"id": 3, "name": "Grace"}, {"id": 4, "name": "Linus"}]
+orders = [{"user_id": 1, "amount": 19.99}, {"user_id": 3, "amount": 42.5},
+          {"user_id": 9, "amount": 1.0}]
+
+users_by_id = {u["id"]: u for u in users}         # index once: O(n), then O(1) lookups
+
+# inner join: orders with their user's name (orders for unknown users dropped)
+[{**o, "name": users_by_id[o["user_id"]]["name"]} for o in orders if o["user_id"] in users_by_id]
+# -> [{'user_id': 1, 'amount': 19.99, 'name': 'Ada'}, {'user_id': 3, 'amount': 42.5, 'name': 'Grace'}]
+
+# left join: every user with their order total (0 if none)
+from collections import defaultdict
+totals = defaultdict(float)
+for o in orders:
+    totals[o["user_id"]] += o["amount"]
+[{"id": u["id"], "name": u["name"], "total": totals.get(u["id"], 0.0)} for u in users]
+# -> [{'id': 1, 'name': 'Ada', 'total': 19.99}, {'id': 3, 'name': 'Grace', 'total': 42.5},
+#     {'id': 4, 'name': 'Linus', 'total': 0.0}]
+
+{o["user_id"] for o in orders} - users_by_id.keys()   # -> {9} (orphans: orders with no user)
+```
+
+### Flatten nested records
+
+```python
+def flatten(d: dict, parent: str = "", sep: str = ".") -> dict:
+    out = {}
+    for k, v in d.items():
+        key = f"{parent}{sep}{k}" if parent else k
+        if isinstance(v, dict):
+            out |= flatten(v, key, sep)
+        else:
+            out[key] = v
+    return out
+
+flatten({"id": 1, "address": {"city": "London", "geo": {"lat": 51.5}}, "tags": ["a"]})
+# -> {'id': 1, 'address.city': 'London', 'address.geo.lat': 51.5, 'tags': ['a']}
+```
+
+### Nest flat records (reshape)
+
+```python
+rows = [
+    {"user_id": 1, "name": "Ada", "order_id": "o1", "amount": 19.99},
+    {"user_id": 1, "name": "Ada", "order_id": "o2", "amount": 5.0},
+    {"user_id": 3, "name": "Grace", "order_id": "o3", "amount": 42.5},
+]
+
+nested: dict[int, dict] = {}
+for r in rows:
+    user = nested.setdefault(r["user_id"], {"id": r["user_id"], "name": r["name"], "orders": []})
+    user["orders"].append({"id": r["order_id"], "amount": r["amount"]})
+list(nested.values())[0]
+# -> {'id': 1, 'name': 'Ada', 'orders': [{'id': 'o1', 'amount': 19.99}, {'id': 'o2', 'amount': 5.0}]}
+```
+
+### List of dicts ↔ dict of lists (columns)
+
+```python
+rows = [{"id": 1, "name": "Ada"}, {"id": 2, "name": "Alan"}]
+
+cols = {k: [r[k] for r in rows] for k in rows[0]}   # -> {'id': [1, 2], 'name': ['Ada', 'Alan']}
+[dict(zip(cols, vals)) for vals in zip(*cols.values())]   # -> back to rows
+
+header, *data = [["id", "name"], [1, "Ada"], [2, "Alan"]]  # CSV-like list of lists
+[dict(zip(header, row)) for row in data]   # -> [{'id': 1, 'name': 'Ada'}, {'id': 2, 'name': 'Alan'}]
+```
+
+### Diff: only POST what changed
+
+```python
+current = {1: {"id": 1, "tier": "gold"}, 2: {"id": 2, "tier": "silver"}, 3: {"id": 3, "tier": "bronze"}}
+desired = {1: {"id": 1, "tier": "gold"}, 2: {"id": 2, "tier": "gold"}, 4: {"id": 4, "tier": "silver"}}
+
+to_create = [desired[k] for k in desired.keys() - current.keys()]   # -> [{'id': 4, 'tier': 'silver'}]
+to_delete = sorted(current.keys() - desired.keys())                  # -> [3]
+to_update = [desired[k] for k in desired.keys() & current.keys() if desired[k] != current[k]]
+# -> [{'id': 2, 'tier': 'gold'}]
+
+def changed_fields(old: dict, new: dict) -> dict:
+    return {k: v for k, v in new.items() if old.get(k) != v}   # PATCH body with only changes
+
+changed_fields(current[2], desired[2])   # -> {'tier': 'gold'}
+```
+
+### Build the POST payload
+
+```python
+from datetime import datetime, timezone
+
+def to_payload(user: dict, total: float, order_count: int) -> dict:
+    return {
+        "user_id": user["id"],
+        "name": user["name"],
+        "total_spent": round(total, 2),          # round money before sending
+        "order_count": order_count,
+        "tier": "gold" if total >= 40 else "standard",
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+
+p = to_payload({"id": 3, "name": "Grace"}, 42.5, 1)
+p["tier"], p["total_spent"]   # -> ('gold', 42.5)
+# Then: requests.post(url, json=p, timeout=5)
+```
+
+## Docs
+
+- [List comprehensions](https://docs.python.org/3.14/tutorial/datastructures.html#list-comprehensions)
+- [Dictionary comprehensions](https://docs.python.org/3.14/tutorial/datastructures.html#dictionaries)
+- [dict | (merge operator)](https://docs.python.org/3.14/library/stdtypes.html#dict)
+- [dict.setdefault](https://docs.python.org/3.14/library/stdtypes.html#dict.setdefault)
+- [Dictionary view objects (keys() set operations)](https://docs.python.org/3.14/library/stdtypes.html#dictionary-view-objects)
+- [str.strip](https://docs.python.org/3.14/library/stdtypes.html#str.strip)
+- [str.casefold](https://docs.python.org/3.14/library/stdtypes.html#str.casefold)
+- [sorted](https://docs.python.org/3.14/library/functions.html#sorted)
+- [operator.itemgetter](https://docs.python.org/3.14/library/operator.html#operator.itemgetter)
+- [collections.defaultdict](https://docs.python.org/3.14/library/collections.html#collections.defaultdict)
+- [collections.Counter](https://docs.python.org/3.14/library/collections.html#collections.Counter)
+- [datetime.datetime.fromisoformat](https://docs.python.org/3.14/library/datetime.html#datetime.datetime.fromisoformat)
+- [datetime.datetime.strptime](https://docs.python.org/3.14/library/datetime.html#datetime.datetime.strptime)

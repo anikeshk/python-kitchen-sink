@@ -3,7 +3,7 @@ title: Unit testing
 sidebar_position: 13
 ---
 
-`unittest` is the stdlib test framework: subclass `TestCase`, name methods `test_*`, and assert with `self.assert*`. In LLD rounds, interviewers often ask "how would you test this?" A good answer covers the happy path, edge cases and error cases (Arrange-Act-Assert), and shows the design is testable: dependencies (repos, clocks, payment gateways) are injected so tests can swap in fakes or mocks. Tests should be fast, isolated and deterministic.
+`unittest` is the stdlib test framework: subclass `TestCase`, name methods `test_*`, and assert with `self.assert*`. For LLD code, ask "how would you test this?" A good answer covers the happy path, edge cases and error cases (Arrange-Act-Assert), and shows the design is testable: dependencies (repos, clocks, payment gateways) are injected so tests can swap in fakes or mocks. Tests should be fast, isolated and deterministic.
 
 ## Syntax
 
@@ -272,7 +272,7 @@ class TestSmoke(unittest.TestCase):
     def test_ok(self) -> None:
         self.assertTrue(True)
 
-# Interview editors / notebooks: don't let unittest.main() call sys.exit
+# Online editors / notebooks: don't let unittest.main() call sys.exit
 unittest.main(argv=["ignored"], exit=False, verbosity=2)
 
 # Command line:

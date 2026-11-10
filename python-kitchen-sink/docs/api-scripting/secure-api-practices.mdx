@@ -1,0 +1,491 @@
+---
+title: Secure API scripting
+sidebar_position: 9
+---
+
+Even a 100-line script that GETs, transforms and POSTs is part of an attack surface: it holds a credential, it trusts a server's responses, it builds URLs from data, and it writes to production. Write it **secure by default** without slowing down: secrets come from the environment and never reach logs, TLS verification stays on, every request has a timeout and a size cap, responses are validated as **untrusted input**, URLs are built with `params=`/`quote` (never string concatenation), auth never follows a redirect or `next` link to another host, outbound payloads are built from an **allowlist** of fields, webhook signatures are checked with `hmac.compare_digest`, and writes default to a dry run. Each is one or two lines. Snippets run against the local [mock API server](/api-scripting/mock-api-server).
+
+## Syntax
+
+```python
+"""Secure-by-default skeleton: the habits on this page in one place."""
+import logging
+import os
+import sys
+from urllib.parse import urlsplit
+
+import requests
+
+TIMEOUT = (3.05, 10)          # (connect, read): never hang forever
+MAX_PAGES = 100               # don't trust the server to end pagination
+
+
+def load_config() -> tuple[str, str]:
+    base_url = os.environ.get("API_BASE_URL", "http://localhost:8000")
+    token = os.environ.get("API_TOKEN")                      # never hardcode; never a default
+    if not token:
+        sys.exit("API_TOKEN is not set")                     # fail fast and loud
+    parts = urlsplit(base_url)
+    if parts.scheme != "https" and parts.hostname not in {"localhost", "127.0.0.1"}:
+        sys.exit(f"refusing non-HTTPS base URL: {base_url}")  # token would travel in cleartext
+    return base_url.rstrip("/"), token
+
+
+def make_session(token: str) -> requests.Session:
+    s = requests.Session()
+    s.headers["Authorization"] = f"Bearer {token}"   # header, not ?api_key= (URLs get logged)
+    # s.verify stays True (the default). Corporate CA? s.verify = "/path/to/ca-bundle.pem"
+    return s
+
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+os.environ.setdefault("API_TOKEN", "secret-token")   # demo only: in real life, set it in the shell
+base_url, token = load_config()
+with make_session(token) as s:
+    r = s.get(f"{base_url}/me", timeout=TIMEOUT)
+    logging.info("GET /me -> %d", r.status_code)     # INFO GET /me -> 200 (status, not headers/tokens)
+```
+
+### Secrets: environment in, never out
+
+```python
+import getpass
+import os
+from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True)
+class Config:
+    base_url: str
+    token: str = field(repr=False)   # keeps the token out of repr(), logs and tracebacks
+
+
+cfg = Config("http://localhost:8000", os.environ.get("API_TOKEN", "secret-token"))
+cfg                     # -> Config(base_url='http://localhost:8000')
+f"{cfg}"                # -> "Config(base_url='http://localhost:8000')"
+
+# Interactive scripts: prompt without echoing the secret to the terminal
+# token = getpass.getpass("API token: ")
+
+# Never: TOKEN = "sk_live_..." in source (it ends up in git history and CI logs),
+#        print(token), log r.request.headers, or pass the token on the command line (visible in `ps`).
+# Keep .env files out of git (.gitignore) and load them with os.environ, not a committed config.
+```
+
+### Redact secrets and PII from logs
+
+```python
+import logging
+
+SENSITIVE_KEYS = {"authorization", "password", "token", "api_key", "secret", "ssn", "card_number"}
+
+
+def redact(obj: object) -> object:
+    """Deep-copy a JSON-like value with sensitive fields masked, safe to log."""
+    if isinstance(obj, dict):
+        return {k: "***" if k.lower() in SENSITIVE_KEYS else redact(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [redact(v) for v in obj]
+    return obj
+
+
+class RedactSecrets(logging.Filter):
+    """Last line of defense: mask known secret values in every formatted log line."""
+
+    def __init__(self, *secrets: str) -> None:
+        super().__init__()
+        self.secrets = [s for s in secrets if s]
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        for s in self.secrets:
+            msg = msg.replace(s, "***")
+        record.msg, record.args = msg, None
+        return True
+
+
+redact({"user": "ada", "password": "hunter2", "cards": [{"card_number": "4111", "exp": "12/29"}]})
+# -> {'user': 'ada', 'password': '***', 'cards': [{'card_number': '***', 'exp': '12/29'}]}
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s", force=True)
+logging.getLogger().handlers[0].addFilter(RedactSecrets("secret-token"))
+logging.info("headers: %s", {"Authorization": "Bearer secret-token"})
+# INFO headers: {'Authorization': 'Bearer ***'}
+```
+
+### TLS: leave verification on
+
+```python
+import ssl
+
+import requests
+
+ctx = ssl.create_default_context()      # what urlopen and requests effectively use
+ctx.check_hostname, ctx.verify_mode == ssl.CERT_REQUIRED   # -> (True, True)
+ctx.minimum_version                     # -> <TLSVersion.TLSv1_2: 771>
+
+# requests.get(url, verify=False)       # NEVER: disables cert checks, enables MITM
+# ssl._create_unverified_context()      # NEVER: same thing for urllib
+# requests.get(url, verify="/etc/ssl/certs/corp-ca.pem")   # custom/internal CA: point at the bundle
+# A cert error is a finding to investigate, not a warning to silence.
+```
+
+### Build URLs safely: params= and quote
+
+```python
+from urllib.parse import quote
+
+import requests
+
+BASE_URL = "http://localhost:8000"
+name = "x&role=admin"                   # value from a CSV, a user, or a previous response
+
+requests.get(f"{BASE_URL}/echo?name={name}", timeout=5).json()["query"]
+# -> {'name': 'x', 'role': 'admin'}     parameter injection: attacker added role=admin
+requests.get(f"{BASE_URL}/echo", params={"name": name}, timeout=5).json()["query"]
+# -> {'name': 'x&role=admin'}           params= encodes it as one value
+
+user_id = "1/../../admin"
+f"{BASE_URL}/users/{user_id}"                        # -> 'http://localhost:8000/users/1/../../admin'
+f"{BASE_URL}/users/{quote(user_id, safe='')}"        # -> 'http://localhost:8000/users/1%2F..%2F..%2Fadmin'
+# Better still: validate the type up front. int(user_id) raises ValueError on "1/../../admin".
+```
+
+### Validate identifiers before using them
+
+```python
+import re
+
+ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+def safe_id(value: object) -> str:
+    s = str(value)
+    if not ID_RE.fullmatch(s):          # fullmatch, not match: anchors both ends
+        raise ValueError(f"invalid id: {s!r}")
+    return s
+
+
+safe_id("o42"), safe_id(7)              # -> ('o42', '7')
+# safe_id("1/../admin")                 # ValueError: invalid id: '1/../admin'
+# safe_id("o1\n")                       # ValueError (re.match with $ would have accepted it)
+```
+
+### Headers and logs: CRLF injection
+
+```python
+import logging
+
+import requests
+
+try:
+    requests.get("http://localhost:8000/echo", headers={"X-User": "ada\r\nX-Admin: 1"}, timeout=5)
+except requests.exceptions.InvalidHeader as e:
+    print("rejected:", type(e).__name__)   # rejected: InvalidHeader (requests blocks header splitting)
+
+logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s", force=True)
+name = "ada\nINFO payment approved for user 1"       # attacker-controlled field
+logging.info("processing user %s", name)    # forges a second, fake log line
+logging.info("processing user %r", name)    # %r escapes it: processing user 'ada\nINFO payment...'
+```
+
+### Treat responses as untrusted input
+
+```python
+import json
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class User:
+    id: int
+    email: str
+    role: str
+
+
+ROLES = {"viewer", "editor"}
+
+
+def parse_user(d: object) -> User:
+    """Check type, shape and range before anything downstream trusts the data."""
+    if not isinstance(d, dict):
+        raise ValueError("user must be an object")
+    uid, email, role = d.get("id"), d.get("email"), d.get("role", "viewer")
+    if not isinstance(uid, int) or isinstance(uid, bool) or uid <= 0:   # bool is an int subclass
+        raise ValueError(f"bad id: {uid!r}")
+    if not isinstance(email, str) or len(email) > 254 or "@" not in email:
+        raise ValueError("bad email")
+    if role not in ROLES:                    # allowlist, don't blocklist
+        raise ValueError(f"unexpected role: {role!r}")
+    return User(uid, email.strip().lower(), role)
+
+
+parse_user({"id": 1, "email": "ADA@x.com"})   # -> User(id=1, email='ada@x.com', role='viewer')
+# parse_user({"id": True, "email": "a@x.com"})        # ValueError: bad id: True
+# parse_user({"id": 2, "email": "a@x.com", "role": "admin"})   # ValueError: unexpected role
+
+# Deserialize with json only. Never eval(r.text), pickle.loads(r.content) or yaml.load()
+# (use yaml.safe_load): those execute attacker-controlled code.
+# json is safe, and Python even caps huge ints (DoS guard, 3.11+):
+# json.loads("1" * 5000)  # ValueError: Exceeds the limit (4300 digits) for integer string conversion
+```
+
+### Cap response size and pagination
+
+```python
+import json
+from collections.abc import Iterator
+
+import requests
+
+MAX_BYTES = 1_000_000
+
+
+def get_json_capped(url: str, max_bytes: int = MAX_BYTES, **kwargs) -> object:
+    """Stream the body and stop reading once it passes max_bytes (memory exhaustion guard)."""
+    with requests.get(url, stream=True, timeout=5, **kwargs) as r:
+        r.raise_for_status()
+        if int(r.headers.get("Content-Length") or 0) > max_bytes:
+            raise ValueError("response too large")
+        body = bytearray()
+        for chunk in r.iter_content(chunk_size=8192):
+            body += chunk
+            if len(body) > max_bytes:           # Content-Length can lie or be absent
+                raise ValueError("response too large")
+    return json.loads(body)
+
+
+def all_orders(max_pages: int = 100) -> Iterator[dict]:
+    """Cursor pagination that can't be trapped in an infinite loop by the server."""
+    cursor, seen = None, set()
+    for _ in range(max_pages):
+        body = get_json_capped("http://localhost:8000/orders",
+                               params={"cursor": cursor} if cursor else {})
+        yield from body["data"]
+        cursor = body.get("next_cursor")
+        if not cursor:
+            return
+        if cursor in seen:
+            raise RuntimeError(f"pagination loop at cursor {cursor!r}")
+        seen.add(cursor)
+    raise RuntimeError(f"stopped after {max_pages} pages")
+
+
+get_json_capped("http://localhost:8000/users/1")["id"]   # -> 1
+len(list(all_orders()))                                  # -> 6
+# get_json_capped("http://localhost:8000/users", max_bytes=100)   # ValueError: response too large
+```
+
+### Redirects and next links: don't leak the token
+
+```python
+import requests
+
+BASE_URL = "http://localhost:8000"
+evil = "http://127.0.0.1:8000/echo"     # a different host (stand-in for attacker.example)
+
+# requests strips Authorization when a redirect changes host...
+r = requests.get(f"{BASE_URL}/redirect", params={"to": evil},
+                 headers={"Authorization": "Bearer secret-token"}, timeout=5)
+r.json()["authorization"]               # -> None
+
+# ...but NOT custom auth headers like X-API-Key:
+r = requests.get(f"{BASE_URL}/redirect", params={"to": evil},
+                 headers={"X-API-Key": "secret-key"}, timeout=5)
+r.json()["api_key"]                     # -> 'secret-key'  leaked to the other host
+
+# Fix: don't follow redirects on authenticated calls; handle them explicitly.
+r = requests.get(f"{BASE_URL}/redirect", params={"to": evil},
+                 headers={"X-API-Key": "secret-key"}, timeout=5, allow_redirects=False)
+r.status_code, r.headers["Location"]    # -> (302, 'http://127.0.0.1:8000/echo')
+```
+
+### Allowlist hosts for URLs from responses (SSRF)
+
+```python
+import ipaddress
+import socket
+from urllib.parse import urlsplit
+
+ALLOWED_HOSTS = {"localhost"}           # in real life: {"api.example.com"}
+
+
+def check_url(url: str) -> str:
+    """Use before following a URL that came from data (next links, webhooks, avatar_url...)."""
+    p = urlsplit(url)
+    if p.scheme not in {"https", "http"} or p.hostname not in ALLOWED_HOSTS:
+        raise ValueError(f"host not allowed: {url!r}")
+    if p.username or p.password:
+        raise ValueError("credentials in URL")
+    return url
+
+
+check_url("http://localhost:8000/orders?cursor=2")   # -> 'http://localhost:8000/orders?cursor=2'
+# check_url("http://169.254.169.254/latest/meta-data/")   # ValueError: cloud metadata endpoint
+# check_url("http://localhost@evil.example/")       # ValueError: hostname is evil.example
+
+
+def resolves_to_public_ip(host: str) -> bool:
+    """For user-supplied URLs you can't allowlist: block internal targets."""
+    for *_, sockaddr in socket.getaddrinfo(host, None):
+        ip = ipaddress.ip_address(sockaddr[0])
+        if not ip.is_global:            # private, loopback, link-local (169.254.x.x), reserved
+            return False
+    return True
+
+
+resolves_to_public_ip("localhost")                  # -> False
+ipaddress.ip_address("169.254.169.254").is_global   # -> False
+# Caveat: DNS can change between this check and the request (DNS rebinding), and redirects
+# can bounce to an internal host, so also pass allow_redirects=False. Prefer a host allowlist.
+```
+
+### Allowlist outbound fields (mass assignment)
+
+```python
+fetched = {"id": 3, "name": "Grace", "role": "admin", "is_verified": True, "total_spent": 42.5}
+
+# Risky: forwards every field the source returned, including ones you never meant to write
+payload = {**fetched, "tier": "gold"}
+
+# Safe: build the body from an explicit allowlist
+ALLOWED_FIELDS = ("total_spent", "tier")
+payload = {k: v for k, v in ({**fetched, "tier": "gold"}).items() if k in ALLOWED_FIELDS}
+payload   # -> {'total_spent': 42.5, 'tier': 'gold'}
+```
+
+### Verify webhook signatures with HMAC
+
+```python
+import hashlib
+import hmac
+import json
+import time
+
+SECRET = b"whsec_demo"                    # shared secret from the provider, via os.environ
+TOLERANCE_SECONDS = 300
+
+
+def sign(body: bytes, ts: int, secret: bytes = SECRET) -> str:
+    return hmac.new(secret, f"{ts}.".encode() + body, hashlib.sha256).hexdigest()
+
+
+def verify(body: bytes, ts: int, signature: str, secret: bytes = SECRET) -> bool:
+    if abs(time.time() - ts) > TOLERANCE_SECONDS:            # replay protection
+        return False
+    return hmac.compare_digest(sign(body, ts, secret), signature)   # constant-time compare
+
+
+body = json.dumps({"event": "order.paid", "id": "o1"}).encode()   # the RAW bytes received
+ts = int(time.time())
+sig = sign(body, ts)
+
+verify(body, ts, sig)                                  # -> True
+verify(body.replace(b"o1", b"o9"), ts, sig)            # -> False (tampered body)
+verify(body, ts - 3600, sign(body, ts - 3600))         # -> False (replayed old request)
+# Sign and verify the raw bytes: re-serialized JSON can differ (key order, spacing).
+# Never compare signatures with ==, which can leak timing information.
+```
+
+### Generate secrets with secrets, not random
+
+```python
+import secrets
+import uuid
+
+secrets.token_urlsafe(32)            # random URL-safe token, e.g. for an Idempotency-Key or nonce
+secrets.token_hex(16)                # 32 hex chars
+secrets.compare_digest("a", "a")     # -> True (same as hmac.compare_digest)
+str(uuid.uuid4())                    # fine for ids; uuid4 uses os.urandom
+# random.random() / random.choice are predictable (Mersenne Twister): never use them for tokens.
+```
+
+### Safe writes: dry run by default
+
+```python
+import argparse
+
+import requests
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Sync user tiers")
+    parser.add_argument("--apply", action="store_true", help="actually POST (default: dry run)")
+    parser.add_argument("--limit", type=int, default=10, help="max records to change")
+    args = parser.parse_args(argv)
+
+    updates = [{"user_id": 1, "total_spent": 19.99}, {"user_id": 3, "total_spent": 42.5}]
+    if len(updates) > args.limit:          # blast-radius guard against a bad transform
+        print(f"refusing to change {len(updates)} records (limit {args.limit})")
+        return 1
+    for u in updates:
+        if not args.apply:
+            print("DRY RUN would POST", u)
+            continue
+        r = requests.post(f"http://localhost:8000/users/{u['user_id']}/summary",
+                          json={"total_spent": u["total_spent"]}, timeout=5)
+        print(u["user_id"], r.status_code)
+    return 0
+
+
+main([])                     # DRY RUN would POST {'user_id': 1, ...} (x2), returns 0
+main(["--apply"])            # 1 201 / 3 201
+main(["--apply", "--limit", "1"])   # refusing to change 2 records (limit 1)
+```
+
+### Write sensitive output with tight permissions
+
+```python
+import json
+import os
+
+data = {"user_id": 1, "email": "ada@example.com"}
+
+# Created owner-read/write only (0o600), instead of world-readable by default umask
+fd = os.open("report.json", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, "w") as f:
+    json.dump(data, f)
+
+oct(os.stat("report.json").st_mode & 0o777)   # -> '0o600'
+# Scratch files: tempfile.NamedTemporaryFile / mkstemp (also 0o600, unpredictable names)
+```
+
+### Security review checklist for an API script
+
+| Area | Check |
+| --- | --- |
+| Secrets | From env or a secrets manager; not in source, argv, URLs, logs or `repr`; least-privilege scope |
+| Transport | HTTPS only; `verify` never `False`; custom CA via a bundle path |
+| Availability | `timeout=` on every call; retry cap with backoff; page cap; response-size cap |
+| Input | Validate type, shape and range of every response field; allowlist enums; `json` only, no `eval`/`pickle` |
+| Injection | `params=` for queries; `quote(..., safe="")` or strict validation for path segments; `%r` for untrusted log values |
+| Redirects / SSRF | `allow_redirects=False` with auth; host allowlist for any URL taken from data; block internal IPs |
+| Output | Allowlisted payload fields; idempotency keys on retried POSTs; dry run + `--apply`; change limits |
+| Integrity | HMAC-verify webhooks over raw bytes with `compare_digest` and a timestamp window |
+| Files | `0o600` for sensitive output; `tempfile` for scratch files |
+| Dependencies | Pin versions (`requests==2.x.y`); scan with `pip-audit`; `pip install --require-hashes` in CI |
+
+## Docs
+
+- [os.environ](https://docs.python.org/3.14/library/os.html#os.environ)
+- [getpass.getpass](https://docs.python.org/3.14/library/getpass.html#getpass.getpass)
+- [dataclasses.field (repr=False)](https://docs.python.org/3.14/library/dataclasses.html#dataclasses.field)
+- [logging.Filter](https://docs.python.org/3.14/library/logging.html#logging.Filter)
+- [ssl.create_default_context](https://docs.python.org/3.14/library/ssl.html#ssl.create_default_context)
+- [ssl: Security considerations](https://docs.python.org/3.14/library/ssl.html#ssl-security)
+- [urllib.parse.quote](https://docs.python.org/3.14/library/urllib.parse.html#urllib.parse.quote)
+- [urllib.parse.urlsplit](https://docs.python.org/3.14/library/urllib.parse.html#urllib.parse.urlsplit)
+- [ipaddress.IPv4Address.is_global](https://docs.python.org/3.14/library/ipaddress.html#ipaddress.IPv4Address.is_global)
+- [socket.getaddrinfo](https://docs.python.org/3.14/library/socket.html#socket.getaddrinfo)
+- [re.fullmatch](https://docs.python.org/3.14/library/re.html#re.fullmatch)
+- [hmac.new](https://docs.python.org/3.14/library/hmac.html#hmac.new)
+- [hmac.compare_digest](https://docs.python.org/3.14/library/hmac.html#hmac.compare_digest)
+- [secrets](https://docs.python.org/3.14/library/secrets.html)
+- [pickle (security warning)](https://docs.python.org/3.14/library/pickle.html)
+- [Integer string conversion length limitation](https://docs.python.org/3.14/library/stdtypes.html#int-max-str-digits)
+- [argparse](https://docs.python.org/3.14/library/argparse.html)
+- [os.open](https://docs.python.org/3.14/library/os.html#os.open)
+- [tempfile.mkstemp](https://docs.python.org/3.14/library/tempfile.html#tempfile.mkstemp)
+- [Python security considerations (all modules)](https://docs.python.org/3.14/library/security_warnings.html)
+- [requests: SSL cert verification](https://requests.readthedocs.io/en/latest/user/advanced/#ssl-cert-verification)
+- [requests: Body content workflow (stream=True)](https://requests.readthedocs.io/en/latest/user/advanced/#body-content-workflow)
